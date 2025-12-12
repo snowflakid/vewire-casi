@@ -16,6 +16,7 @@ import PlinkoGame from './games/Plinko';
 import LimboGame from './games/Limbo';
 import KenoGame from './games/Keno';
 import RouletteGame from './games/Roulette';
+import BlackjackGame from './games/Blackjack';
 import HiLoGame from './games/HiLo';
 import WheelGame from './games/Wheel';
 
@@ -126,6 +127,7 @@ export default function CasinoApp() {
               {activeGame === 'LIMBO' && <LimboGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'KENO' && <KenoGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'ROULETTE' && <RouletteGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
+              {activeGame === 'BLACKJACK' && <BlackjackGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'HILO' && <HiLoGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'WHEEL' && <WheelGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
            </div>
