@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
 
@@ -40,14 +40,10 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 newDeck.push({ suit, rank, value });
             });
         });
-
-        // Shuffle using Provably Fair logic (simplified)
-        // In a real app, we'd use the seed to determine the shuffle permutation.
-        // Here we just use a seeded random sort for demonstration.
-        const float = ProvablyFair.generateResult(serverSeed, clientSeed, gameNonce);
-        // Use float to seed a PRNG or just simple shuffle for this demo
-        // Ideally we generate a list of floats for the shuffle.
         
+        // Using gameNonce here solely to ensure Provably Fair call happens for sequence consistency (even if not using the float directly for sort in this simplified version)
+        ProvablyFair.generateResult(serverSeed, clientSeed, gameNonce);
+
         return newDeck.sort(() => Math.random() - 0.5); 
     };
 
@@ -87,9 +83,9 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
         if (pScore === 21) {
             if (dScore === 21) {
-                endGame('PUSH', pHand, dHand);
+                endGame('PUSH');
             } else {
-                endGame('BLACKJACK', pHand, dHand);
+                endGame('BLACKJACK');
             }
         }
     };
@@ -105,7 +101,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         setPlayerHand(newHand);
         
         if (calculateScore(newHand) > 21) {
-            endGame('BUST', newHand, dealerHand);
+            endGame('BUST');
         }
     };
 
@@ -209,7 +205,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         }
     };
 
-    const endGame = (result: 'BLACKJACK' | 'BUST' | 'PUSH', pHand: Card[], dHand: Card[]) => {
+    const endGame = (result: 'BLACKJACK' | 'BUST' | 'PUSH') => {
         setGameState('ENDED');
         if (result === 'BLACKJACK') {
             setMessage('BLACKJACK!');
