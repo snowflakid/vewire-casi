@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
 
@@ -9,7 +9,7 @@ type Rank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | '
 interface Card {
     suit: Suit;
     rank: Rank;
-    value: number; // 1 for A initially, calculated dynamically for hand
+    value: number; 
 }
 
 const SUITS: Suit[] = ['♠', '♥', '♣', '♦'];
@@ -23,13 +23,21 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const [gameState, setGameState] = useState<'BETTING' | 'PLAYING' | 'DEALER_TURN' | 'ENDED'>('BETTING');
     const [message, setMessage] = useState('');
     
+    const timeoutRef = useRef<number | null>(null);
+
     // Provably Fair
     const [serverSeed] = useState(ProvablyFair.generateServerSeed());
     const [clientSeed] = useState(ProvablyFair.generateClientSeed());
     const [nonce, setNonce] = useState(0);
 
-    // Deck Generation (Fisher-Yates Shuffle using RNG)
-    const generateDeck = (gameNonce: number) => {
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, []);
+
+    const generateDeck = useCallback((gameNonce: number) => {
         const newDeck: Card[] = [];
         SUITS.forEach(suit => {
             RANKS.forEach(rank => {
@@ -40,14 +48,15 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 newDeck.push({ suit, rank, value });
             });
         });
-        
-        // Using gameNonce here solely to ensure Provably Fair call happens for sequence consistency (even if not using the float directly for sort in this simplified version)
+
+        // Ensure RNG sequence is consistent
         ProvablyFair.generateResult(serverSeed, clientSeed, gameNonce);
-
+        
+        // Simple shuffle
         return newDeck.sort(() => Math.random() - 0.5); 
-    };
+    }, [serverSeed, clientSeed]);
 
-    const calculateScore = (hand: Card[]) => {
+    const calculateScore = useCallback((hand: Card[]) => {
         let score = 0;
         let aces = 0;
         hand.forEach(card => {
@@ -59,7 +68,47 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             aces -= 1;
         }
         return score;
-    };
+    }, []);
+
+    const endGame = useCallback((result: 'BLACKJACK' | 'BUST' | 'PUSH' | 'WIN' | 'LOSE' | 'DEALER_BUST', payout: number = 0) => {
+        setGameState('ENDED');
+        
+        let msg = '';
+        let winAmount = 0;
+
+        switch (result) {
+            case 'BLACKJACK':
+                msg = 'BLACKJACK!';
+                winAmount = payout;
+                break;
+            case 'BUST':
+                msg = 'BUST!';
+                winAmount = 0;
+                break;
+            case 'PUSH':
+                msg = 'PUSH';
+                winAmount = payout; // Return bet
+                break;
+            case 'WIN':
+                msg = 'YOU WIN!';
+                winAmount = payout;
+                break;
+            case 'LOSE':
+                msg = 'DEALER WINS';
+                winAmount = 0;
+                break;
+            case 'DEALER_BUST':
+                msg = 'DEALER BUST!';
+                winAmount = payout;
+                break;
+        }
+
+        setMessage(msg);
+        if (winAmount > 0) {
+            setBalance(b => b + winAmount);
+        }
+        onGameEnd(winAmount > 0, winAmount);
+    }, [setBalance, onGameEnd]);
 
     const deal = () => {
         if (balance < betAmount) return;
@@ -68,6 +117,9 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         const currentDeck = generateDeck(nonce);
         setNonce(n => n + 1);
         
+        // Safety check
+        if (currentDeck.length < 4) return;
+
         const pHand = [currentDeck.pop()!, currentDeck.pop()!];
         const dHand = [currentDeck.pop()!, currentDeck.pop()!];
         
@@ -77,15 +129,14 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         setGameState('PLAYING');
         setMessage('');
 
-        // Check Instant Blackjack
         const pScore = calculateScore(pHand);
         const dScore = calculateScore(dHand);
 
         if (pScore === 21) {
             if (dScore === 21) {
-                endGame('PUSH');
+                endGame('PUSH', betAmount);
             } else {
-                endGame('BLACKJACK');
+                endGame('BLACKJACK', betAmount * 2.5);
             }
         }
     };
@@ -94,7 +145,10 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         if (gameState !== 'PLAYING') return;
         
         const newDeck = [...deck];
-        const card = newDeck.pop()!;
+        const card = newDeck.pop();
+        
+        if (!card) return; // Should not happen
+
         const newHand = [...playerHand, card];
         
         setDeck(newDeck);
@@ -105,120 +159,68 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         }
     };
 
+    const evaluateWinner = (pHand: Card[], dHand: Card[], betMult = 1) => {
+        const pScore = calculateScore(pHand);
+        const dScore = calculateScore(dHand);
+        const totalBet = betAmount * betMult;
+
+        if (dScore > 21) {
+            endGame('DEALER_BUST', totalBet * 2);
+        } else if (pScore > dScore) {
+            endGame('WIN', totalBet * 2);
+        } else if (pScore === dScore) {
+            endGame('PUSH', totalBet);
+        } else {
+            endGame('LOSE');
+        }
+    };
+
+    const playDealerTurn = (hand: Card[], currentDeck: Card[], pHand: Card[], betMult: number) => {
+        const score = calculateScore(hand);
+        
+        if (score < 17) {
+            timeoutRef.current = setTimeout(() => {
+                const newDeck = [...currentDeck];
+                const card = newDeck.pop();
+                if (card) {
+                    const newHand = [...hand, card];
+                    setDealerHand(newHand);
+                    setDeck(newDeck); // Sync state
+                    playDealerTurn(newHand, newDeck, pHand, betMult);
+                }
+            }, 600) as unknown as number;
+        } else {
+            evaluateWinner(pHand, hand, betMult);
+        }
+    };
+
     const stand = () => {
         if (gameState !== 'PLAYING') return;
         setGameState('DEALER_TURN');
-        
-        let dHand = [...dealerHand];
-        let dDeck = [...deck];
-        
-        // Dealer draws until >= 17
-        // Simple animation loop?
-        // For simplicity, calculate immediately but show with delay if possible.
-        // Let's do a simple recursive timeout loop for effect.
-        
-        const playDealer = (hand: Card[], deck: Card[]) => {
-            const score = calculateScore(hand);
-            if (score < 17) {
-                setTimeout(() => {
-                    const card = deck.pop()!;
-                    const newHand = [...hand, card];
-                    setDealerHand(newHand);
-                    playDealer(newHand, deck);
-                }, 500);
-            } else {
-                // Dealer Done
-                evaluateWinner(playerHand, hand);
-            }
-        };
-        
-        playDealer(dHand, dDeck);
+        playDealerTurn(dealerHand, deck, playerHand, 1);
     };
 
     const double = () => {
         if (gameState !== 'PLAYING' || playerHand.length !== 2) return;
-        if (balance < betAmount) return; // Need funds to double
+        if (balance < betAmount) return;
         
-        setBalance(b => b - betAmount); // Deduct extra bet
+        setBalance(b => b - betAmount);
         
         const newDeck = [...deck];
-        const card = newDeck.pop()!;
+        const card = newDeck.pop();
+        if (!card) return;
+
         const newHand = [...playerHand, card];
         
         setDeck(newDeck);
         setPlayerHand(newHand);
         
-        // Double down = 1 card then stand
         const score = calculateScore(newHand);
         if (score > 21) {
-            // Bust (loss calculation needs to handle 2x bet)
-            setGameState('ENDED');
-            setMessage('BUST!');
-            onGameEnd(false, 0); // Lost 2x bet
+            endGame('BUST'); // Lost 2x bet (betAmount already deducted twice)
         } else {
-            // Stand automatically
             setGameState('DEALER_TURN');
-            // Re-use dealer logic... simplified copy/paste for now
-             let dHand = [...dealerHand];
-             const playDealer = (hand: Card[], deck: Card[]) => {
-                const s = calculateScore(hand);
-                if (s < 17) {
-                    setTimeout(() => {
-                        const c = deck.pop()!;
-                        const h = [...hand, c];
-                        setDealerHand(h);
-                        playDealer(h, deck);
-                    }, 500);
-                } else {
-                    evaluateWinner(newHand, hand, 2); // Pass multiplier
-                }
-            };
-            playDealer(dHand, newDeck);
-        }
-    };
-
-    const evaluateWinner = (pHand: Card[], dHand: Card[], betMult = 1) => {
-        const pScore = calculateScore(pHand);
-        const dScore = calculateScore(dHand);
-        
-        setGameState('ENDED');
-        
-        const totalBet = betAmount * betMult;
-
-        if (dScore > 21) {
-            setMessage('DEALER BUST! YOU WIN!');
-            const win = totalBet * 2;
-            setBalance(b => b + win);
-            onGameEnd(true, win);
-        } else if (pScore > dScore) {
-            setMessage('YOU WIN!');
-            const win = totalBet * 2;
-            setBalance(b => b + win);
-            onGameEnd(true, win);
-        } else if (pScore === dScore) {
-            setMessage('PUSH');
-            setBalance(b => b + totalBet); // Return bet
-            onGameEnd(true, totalBet);
-        } else {
-            setMessage('DEALER WINS');
-            onGameEnd(false, 0);
-        }
-    };
-
-    const endGame = (result: 'BLACKJACK' | 'BUST' | 'PUSH') => {
-        setGameState('ENDED');
-        if (result === 'BLACKJACK') {
-            setMessage('BLACKJACK!');
-            const win = betAmount * 2.5; // 3:2 payout usually means 2.5x total return
-            setBalance(b => b + win);
-            onGameEnd(true, win);
-        } else if (result === 'BUST') {
-            setMessage('BUST!');
-            onGameEnd(false, 0);
-        } else if (result === 'PUSH') {
-            setMessage('PUSH');
-            setBalance(b => b + betAmount);
-            onGameEnd(true, betAmount);
+            playDealerTurn(dealerHand, newDeck, newHand, 2);
         }
     };
 
@@ -254,7 +256,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 )}
             </div>
             
-            <div className="flex-1 bg-[#0d4d23] rounded-xl border border-[#1e6b36] flex flex-col items-center justify-between p-8 relative overflow-hidden shadow-inner">
+            <div className="flex-1 bg-[#0d4d23] rounded-xl border border-[#1e6b36] flex flex-col items-center justify-between p-8 relative overflow-hidden shadow-inner min-h-[500px]">
                 {/* Dealer Hand */}
                 <div className="flex flex-col items-center">
                     <div className="text-green-200 text-xs font-bold uppercase mb-2">Dealer {gameState === 'ENDED' ? calculateScore(dealerHand) : ''}</div>
@@ -268,8 +270,10 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 {/* Message Overlay */}
                 {message && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                        <div className="bg-black/60 backdrop-blur-md px-8 py-4 rounded-xl border border-white/20">
-                            <h2 className="text-3xl font-black text-white uppercase tracking-wider animate-in zoom-in">{message}</h2>
+                        <div className="bg-black/80 backdrop-blur-md px-10 py-6 rounded-xl border border-white/20 shadow-2xl animate-in zoom-in duration-300">
+                            <h2 className={`text-4xl font-black uppercase tracking-wider ${message.includes('WIN') || message.includes('BLACKJACK') ? 'text-green-500' : message.includes('LOSE') || message.includes('BUST') ? 'text-red-500' : 'text-white'}`}>
+                                {message}
+                            </h2>
                         </div>
                     </div>
                 )}
@@ -281,7 +285,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             <CardView key={i} card={card} />
                         ))}
                     </div>
-                    <div className="text-white font-bold bg-black/40 px-4 py-1 rounded-full border border-white/10">
+                    <div className="text-white font-bold bg-black/40 px-4 py-1 rounded-full border border-white/10 shadow-lg">
                         {calculateScore(playerHand)}
                     </div>
                 </div>
@@ -294,7 +298,8 @@ const CardView = ({ card, hidden = false }: { card: Card, hidden?: boolean }) =>
     if (hidden) {
         return (
             <div className="w-20 h-28 md:w-24 md:h-36 bg-blue-900 rounded-lg border-2 border-white/20 shadow-xl flex items-center justify-center relative transform transition-transform hover:-translate-y-2">
-                 <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(255,255,255,0.1)_5px,rgba(255,255,255,0.1)_10px)]"></div>
+                 <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(255,255,255,0.1)_5px,rgba(255,255,255,0.1)_10px)] opacity-50"></div>
+                 <div className="absolute inset-0 flex items-center justify-center text-white/20 font-bold text-2xl">?</div>
             </div>
         );
     }
@@ -302,7 +307,7 @@ const CardView = ({ card, hidden = false }: { card: Card, hidden?: boolean }) =>
     const isRed = card.suit === '♥' || card.suit === '♦';
     
     return (
-        <div className="w-20 h-28 md:w-24 md:h-36 bg-white rounded-lg shadow-xl flex flex-col items-center justify-between p-2 transform transition-transform hover:-translate-y-2 select-none">
+        <div className="w-20 h-28 md:w-24 md:h-36 bg-white rounded-lg shadow-xl flex flex-col items-center justify-between p-2 transform transition-transform hover:-translate-y-2 select-none border border-gray-200">
             <div className={`self-start text-lg font-bold ${isRed ? 'text-red-600' : 'text-black'}`}>{card.rank}</div>
             <div className={`text-4xl ${isRed ? 'text-red-600' : 'text-black'}`}>{card.suit}</div>
             <div className={`self-end text-lg font-bold ${isRed ? 'text-red-600' : 'text-black'} rotate-180`}>{card.rank}</div>
