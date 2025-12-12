@@ -11,7 +11,7 @@ export interface AutoBetSettings {
 
 export const useAutoBet = (
     balance: number,
-    setBalance: React.Dispatch<React.SetStateAction<number>>,
+    _setBalance: React.Dispatch<React.SetStateAction<number>>,
     betAmount: number,
     setBetAmount: React.Dispatch<React.SetStateAction<number>>
 ) => {
@@ -63,10 +63,6 @@ export const useAutoBet = (
         if (!isAutoBetting) return false;
 
         const newBetsMade = betsMade + 1;
-        const currentProfit = winAmount - currentBet; // winAmount is total return? Or just profit? 
-        // In most games here, onGameEnd passes "win" amount (total payout).
-        // If lost, winAmount is 0. Profit is -bet.
-        // If win 2x, winAmount is 20. Profit is 10.
         
         const newProfit = profit + (winAmount - currentBet);
         

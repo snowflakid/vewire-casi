@@ -54,7 +54,7 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             return x - Math.floor(x);
         };
         
-        return arr.sort((a, b) => seededRandom(arr.indexOf(a) + arr.length) - 0.5)
+        return arr.sort((a) => seededRandom(arr.indexOf(a) + arr.length) - 0.5)
                   .sort(() => Math.random() - 0.5); 
     }, []);
 
