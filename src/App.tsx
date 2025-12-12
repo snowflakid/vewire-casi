@@ -16,9 +16,10 @@ import PlinkoGame from './games/Plinko';
 import LimboGame from './games/Limbo';
 import KenoGame from './games/Keno';
 import RouletteGame from './games/Roulette';
-import BlackjackGame from './games/Blackjack';
 import HiLoGame from './games/HiLo';
 import WheelGame from './games/Wheel';
+import RockPaperScissors from './games/RockPaperScissors';
+import BlackjackGame from './games/Blackjack';
 
 // Views
 import Profile from './views/Profile';
@@ -130,6 +131,7 @@ export default function CasinoApp() {
               {activeGame === 'BLACKJACK' && <BlackjackGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'HILO' && <HiLoGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
               {activeGame === 'WHEEL' && <WheelGame balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
+              {activeGame === 'RPS' && <RockPaperScissors balance={balance} setBalance={setBalance} onGameEnd={handleGameEnd} />}
            </div>
            
            {/* Footer Info */}

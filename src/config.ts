@@ -1,4 +1,4 @@
-import { Zap, Bomb, Dice5, Trophy, Percent, Grid3X3, Spade } from 'lucide-react';
+import { Zap, Bomb, Dice5, Trophy, Percent, Grid3X3, Spade, Scissors } from 'lucide-react';
 
 export const THEME = {
   bg: "bg-[#0b0e11]",        // Ultra dark (Stake style)
@@ -26,6 +26,7 @@ export const GAMES_CONFIG = [
   { id: 'LIMBO', name: 'Limbo', icon: Percent, color: 'text-orange-500' },
   { id: 'ROULETTE', name: 'Roulette', icon: Grid3X3, color: 'text-green-500' },
   { id: 'BLACKJACK', name: 'Blackjack', icon: Spade, color: 'text-gray-300' },
+  { id: 'RPS', name: 'RPS', icon: Scissors, color: 'text-pink-500' },
   { id: 'HILO', name: 'HiLo', icon: Grid3X3, color: 'text-yellow-500' }, // Reusing icon for now
   { id: 'WHEEL', name: 'Wheel', icon: Grid3X3, color: 'text-pink-500' },
   { id: 'KENO', name: 'Keno', icon: Grid3X3, color: 'text-emerald-500' },
