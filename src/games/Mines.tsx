@@ -93,6 +93,10 @@ const MinesGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             disabled={isPlaying}
             className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`}
           />
+          <div className="grid grid-cols-2 gap-2 mt-2">
+              <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} disabled={isPlaying} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
+              <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} disabled={isPlaying} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+          </div>
         </div>
         {isPlaying ? (
           <button onClick={cashout} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase hover:opacity-90`}>

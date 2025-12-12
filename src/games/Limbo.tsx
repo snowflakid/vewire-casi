@@ -1,41 +1,26 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
+import { useAutoBet } from '../hooks/useAutoBet';
 import AutobetControls from '../components/AutobetControls';
 
 const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const [target, setTarget] = useState(2.0);
     const [betAmount, setBetAmount] = useState(10);
-    // const [result, setResult] = useState<number | null>(null);
     const [displayResult, setDisplayResult] = useState<number>(1.00);
     const [isPlaying, setIsPlaying] = useState(false);
     
-    // Autobet State
     const [mode, setMode] = useState<'MANUAL' | 'AUTO'>('MANUAL');
-    const [isAutoRunning, setIsAutoRunning] = useState(false);
-    const [autoSettings, setAutoSettings] = useState({
-        betAmount: 10,
-        betsCount: 0,
-        onWin: 0,
-        onLoss: 0,
-        stopProfit: 0,
-        stopLoss: 0
-    });
-    
-    // Refs for Auto Logic
-    const autoRef = useRef({
-        running: false,
-        remaining: 0,
-        currentBet: 10,
-        profit: 0
-    });
-    
-    // Keep autoRef synced
-    useEffect(() => {
-        if (!isAutoRunning) {
-            autoRef.current.currentBet = betAmount;
-        }
-    }, [betAmount, isAutoRunning]);
+    const [autoTrigger, setAutoTrigger] = useState(0);
+
+    const { 
+        isAutoBetting, 
+        startAutoBet, 
+        stopAutoBet, 
+        processResult, 
+        settings, 
+        setSettings 
+    } = useAutoBet(balance, setBalance, betAmount, setBetAmount);
 
     // Provably Fair
     const [serverSeed] = useState(ProvablyFair.generateServerSeed());
@@ -43,144 +28,75 @@ const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const [nonce, setNonce] = useState(0);
 
     const winChance = (99 / target).toFixed(2);
+    
+    // Animation Ref
+    const reqRef = useRef<number>(0);
 
-    const stopAuto = () => {
-        setIsAutoRunning(false);
-        autoRef.current.running = false;
-    };
-
-    const runGame = async () => {
-        // Logic for a single game round
-        // Returns the net result (profit/loss)
-        
-        const currentBet = mode === 'AUTO' ? autoRef.current.currentBet : betAmount;
-
-        if (balance < currentBet) {
-            stopAuto();
+    const runGame = useCallback(() => {
+        if (balance < betAmount) {
+            stopAutoBet();
             return;
         }
         
         // Deduct Bet
-        setBalance(b => b - currentBet);
+        setBalance(b => b - betAmount);
         setIsPlaying(true);
         
         // Generate Result
-        // Limbo formula: 0.99 * (MAX / (Random)) ?? 
-        // Standard: 100 / (random * 100) * 0.99 = 0.99 / random
-        // Provably Fair float is 0..1
         const float = ProvablyFair.generateResult(serverSeed, clientSeed, nonce);
         setNonce(n => n + 1);
         
-        // Limbo Result Calculation
-        // Max payout usually 1,000,000x or something
-        // Formula: 0.99 / (float) 
-        // If float is 0 -> Infinite (cap at 1M)
         let generated = 0.99 / float;
         if (generated > 1000000) generated = 1000000;
-        if (generated < 1) generated = 1; // Minimum 1.00x? Usually yes.
+        if (generated < 1) generated = 1; 
         
-        // setResult(generated);
-
-        // Animation
-        // Count up from 1.00 to generated
-        // If generated is huge (e.g. 1000x), we don't want to wait 10 seconds.
-        // We want a fast exponential counter.
+        const startTime = performance.now();
+        const duration = 500; // ms
         
-        return new Promise<number>((resolve) => {
-            const startTime = performance.now();
-            const duration = 500; // ms
+        const animate = (time: number) => {
+            const elapsed = time - startTime;
+            const progress = Math.min(elapsed / duration, 1);
             
-            const animate = (time: number) => {
-                const elapsed = time - startTime;
-                const progress = Math.min(elapsed / duration, 1);
+            // Visual random scramble effect
+            const currentDisplay = 1 + (generated - 1) * progress;
+            setDisplayResult(currentDisplay);
+            
+            if (progress < 1) {
+                reqRef.current = requestAnimationFrame(animate);
+            } else {
+                setDisplayResult(generated);
+                setIsPlaying(false);
                 
-                // Ease out expo
-                // Show numbers racing up
-                // If we won (generated >= target), we show generated.
-                // If we lost, we show generated.
-                // Limbo usually snaps or counts fast.
+                const won = generated >= target;
+                const winAmount = won ? betAmount * target : 0;
                 
-                // Let's do a random scramble or fast count
-                const currentDisplay = 1 + (generated - 1) * progress;
-                
-                setDisplayResult(currentDisplay);
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    setDisplayResult(generated);
-                    setIsPlaying(false);
-                    
-                    const won = generated >= target;
-                    let profit = -currentBet;
-                    
-                    if (won) {
-                        const winAmount = currentBet * target;
-                        setBalance(b => b + winAmount);
-                        onGameEnd(true, winAmount);
-                        profit = winAmount - currentBet;
-                    } else {
-                        onGameEnd(false, 0);
-                    }
-                    
-                    resolve(profit);
+                if (won) {
+                    setBalance(b => b + winAmount);
                 }
-            };
-            requestAnimationFrame(animate);
-        });
-    };
-
-    const handleAutoLoop = async () => {
-        if (!autoRef.current.running) return;
-
-        const profit = await runGame() || 0;
-        
-        // Update Auto State
-        autoRef.current.profit += profit;
-        
-        if (autoRef.current.remaining > 0) {
-            autoRef.current.remaining--;
-            if (autoRef.current.remaining === 0) {
-                stopAuto();
-                return;
+                
+                onGameEnd(won, winAmount);
+                
+                if (isAutoBetting) {
+                     const shouldContinue = processResult(won, winAmount);
+                     if (shouldContinue) {
+                         setTimeout(() => setAutoTrigger(t => t + 1), 200);
+                     }
+                }
             }
-        }
-        
-        // Handle On Win / On Loss
-        if (profit > 0) {
-            // Win
-            if (autoSettings.onWin !== 0) {
-                autoRef.current.currentBet *= (1 + autoSettings.onWin / 100);
-            }
-        } else {
-            // Loss
-            if (autoSettings.onLoss !== 0) {
-                autoRef.current.currentBet *= (1 + autoSettings.onLoss / 100);
-            }
-        }
-
-        // Safety Caps
-        if (autoSettings.stopProfit > 0 && autoRef.current.profit >= autoSettings.stopProfit) {
-            stopAuto();
-            return;
-        }
-        
-        // Loop
-        if (autoRef.current.running) {
-             setTimeout(() => handleAutoLoop(), 100); // Small delay between bets
-        }
-    };
-
-    const startAuto = () => {
-        setIsAutoRunning(true);
-        autoRef.current = {
-            running: true,
-            remaining: autoSettings.betsCount,
-            currentBet: betAmount,
-            profit: 0
         };
-        handleAutoLoop();
-    };
+        reqRef.current = requestAnimationFrame(animate);
+
+    }, [balance, betAmount, target, serverSeed, clientSeed, nonce, isAutoBetting, processResult, stopAutoBet, setBalance, onGameEnd]);
+
+    useEffect(() => {
+        if (isAutoBetting && autoTrigger > 0) {
+            runGame();
+        }
+    }, [autoTrigger, isAutoBetting, runGame]);
+
+    useEffect(() => {
+        return () => cancelAnimationFrame(reqRef.current);
+    }, []);
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 h-full">
@@ -189,14 +105,16 @@ const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 {/* Mode Switcher */}
                 <div className="bg-[#0f141d] p-1 rounded-lg flex gap-1">
                     <button 
-                        onClick={() => { setMode('MANUAL'); stopAuto(); }}
+                        onClick={() => { setMode('MANUAL'); stopAutoBet(); }}
                         className={`flex-1 py-2 rounded text-xs font-bold transition-all ${mode === 'MANUAL' ? 'bg-[#2f3847] text-white shadow' : 'text-gray-500 hover:text-white'}`}
+                        disabled={isPlaying || isAutoBetting}
                     >
                         Manual
                     </button>
                     <button 
                         onClick={() => setMode('AUTO')}
                         className={`flex-1 py-2 rounded text-xs font-bold transition-all ${mode === 'AUTO' ? 'bg-[#2f3847] text-white shadow' : 'text-gray-500 hover:text-white'}`}
+                        disabled={isPlaying || isAutoBetting}
                     >
                         Auto
                     </button>
@@ -212,8 +130,14 @@ const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                            <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
                            <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
-                        <div className="text-xs text-gray-500">Win Chance: {winChance}%</div>
-                        <button onClick={() => runGame()} disabled={isPlaying} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto hover:opacity-90 active:scale-95 transition-all`}>
+                        <div className="grid grid-cols-2 gap-2">
+                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
+                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                        </div>
+
+                        <div className="text-xs text-gray-500 mt-2">Win Chance: {winChance}%</div>
+                        
+                        <button onClick={runGame} disabled={isPlaying} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto hover:opacity-90 active:scale-95 transition-all`}>
                             {isPlaying ? "Running..." : "Bet"}
                         </button>
                     </>
@@ -221,19 +145,19 @@ const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                     <>
                          <div>
                            <label className="text-gray-400 text-xs font-bold uppercase">Target Multiplier</label>
-                           <input type="number" step="0.1" min="1.01" value={target} onChange={(e) => setTarget(Number(e.target.value))} disabled={isAutoRunning} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                           <input type="number" step="0.1" min="1.01" value={target} onChange={(e) => setTarget(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
                         <div>
                            <label className="text-gray-400 text-xs font-bold uppercase">Base Bet Amount</label>
-                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoRunning} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
                         
                         <AutobetControls 
-                            settings={autoSettings} 
-                            onChange={setAutoSettings} 
-                            onStart={startAuto} 
-                            onStop={stopAuto} 
-                            isRunning={isAutoRunning}
+                            settings={settings} 
+                            onChange={setSettings} 
+                            onStart={() => { startAutoBet(); setTimeout(() => setAutoTrigger(t => t+1), 0); }}
+                            onStop={stopAutoBet} 
+                            isRunning={isAutoBetting}
                             balance={balance}
                         />
                     </>
@@ -248,6 +172,7 @@ const LimboGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                          {displayResult.toFixed(2)}x
                      </div>
                      <div className="text-gray-500 mt-4 text-xl">Target: {target.toFixed(2)}x</div>
+                     {isAutoBetting && <div className="text-green-500 font-bold mt-2 animate-pulse">AUTOBET ACTIVE</div>}
                  </div>
             </div>
         </div>

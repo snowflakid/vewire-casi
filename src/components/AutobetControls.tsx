@@ -1,14 +1,6 @@
 import { Play, Square } from 'lucide-react';
 import { THEME } from '../config';
-
-interface AutoBetSettings {
-    betAmount: number;
-    betsCount: number; // 0 for infinite
-    onWin: number; // % increase
-    onLoss: number; // % increase
-    stopProfit: number;
-    stopLoss: number;
-}
+import type { AutoBetSettings } from '../hooks/useAutoBet';
 
 interface AutobetControlsProps {
     settings: AutoBetSettings;

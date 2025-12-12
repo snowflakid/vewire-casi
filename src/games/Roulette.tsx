@@ -1,12 +1,26 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
+import { useAutoBet } from '../hooks/useAutoBet';
+import AutobetControls from '../components/AutobetControls';
 
 const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const [betAmount, setBetAmount] = useState(10);
     const [selectedBets, setSelectedBets] = useState<string[]>([]);
     const [isSpinning, setIsSpinning] = useState(false);
     const [lastNumber, setLastNumber] = useState<number | null>(null);
+
+    const [mode, setMode] = useState<'MANUAL' | 'AUTO'>('MANUAL');
+    const [autoTrigger, setAutoTrigger] = useState(0);
+
+    const { 
+        isAutoBetting, 
+        startAutoBet, 
+        stopAutoBet, 
+        processResult, 
+        settings, 
+        setSettings 
+    } = useAutoBet(balance, setBalance, betAmount, setBetAmount);
 
     const [serverSeed] = useState(ProvablyFair.generateServerSeed());
     const [clientSeed] = useState(ProvablyFair.generateClientSeed());
@@ -20,7 +34,7 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     };
 
     const toggleBet = (bet: string) => {
-        if (isSpinning) return;
+        if (isSpinning || isAutoBetting) return;
         if (selectedBets.includes(bet)) {
             setSelectedBets(prev => prev.filter(b => b !== bet));
         } else {
@@ -28,9 +42,18 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         }
     };
 
-    const spin = () => {
-        const totalWager = betAmount * selectedBets.length;
-        if (balance < totalWager || selectedBets.length === 0) return;
+    // Ref to access current selected bets during auto loop without dependency
+    const betsRef = useRef(selectedBets);
+    useEffect(() => { betsRef.current = selectedBets; }, [selectedBets]);
+
+    const spin = useCallback(() => {
+        const currentBets = betsRef.current;
+        const totalWager = betAmount * currentBets.length;
+        
+        if (balance < totalWager || currentBets.length === 0) {
+            stopAutoBet();
+            return;
+        }
         
         setBalance(b => b - totalWager);
         setIsSpinning(true);
@@ -46,12 +69,10 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             
             let totalWin = 0;
             const winningColor = getColor(result);
-            // 1st 12: 1-12, 2nd: 13-24, 3rd: 25-36
             
-            selectedBets.forEach(bet => {
+            currentBets.forEach(bet => {
                 let multiplier = 0;
                 
-                // Logic Table
                 if (bet === 'red' && winningColor === 'red') multiplier = 2;
                 else if (bet === 'black' && winningColor === 'black') multiplier = 2;
                 else if (bet === 'even' && result !== 0 && result % 2 === 0) multiplier = 2;
@@ -73,28 +94,90 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 onGameEnd(false, 0);
             }
 
-        }, 1000); // 1s visual
-    };
+            if (isAutoBetting) {
+                const continueAuto = processResult(totalWin >= totalWager, totalWin);
+                if (continueAuto) {
+                    setTimeout(() => setAutoTrigger(t => t + 1), 500);
+                }
+            }
+
+        }, 1000); 
+    }, [balance, betAmount, serverSeed, clientSeed, nonce, isAutoBetting, processResult, stopAutoBet, setBalance, onGameEnd]);
+
+    useEffect(() => {
+        if (isAutoBetting && autoTrigger > 0) {
+            spin();
+        }
+    }, [autoTrigger, isAutoBetting, spin]);
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 h-full">
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
-                <div>
-                   <label className="text-gray-400 text-xs font-bold uppercase">Chip Value</label>
-                   <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
-                </div>
-                <div className="text-xs text-gray-500">Total Bet: ${(betAmount * selectedBets.length).toFixed(2)}</div>
-                
-                <div className="bg-[#0f141d] p-2 rounded text-[10px] text-gray-500 font-mono break-all">
-                    Next Nonce: {nonce}
+                {/* Mode Tabs */}
+                <div className="bg-[#0f141d] p-1 rounded-lg flex text-sm font-bold mb-2">
+                    <button 
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => setMode('MANUAL')}
+                        disabled={isSpinning || isAutoBetting}
+                    >
+                        Manual
+                    </button>
+                    <button 
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => setMode('AUTO')}
+                        disabled={isSpinning || isAutoBetting}
+                    >
+                        Auto
+                    </button>
                 </div>
 
-                <button onClick={spin} disabled={isSpinning || selectedBets.length === 0} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}>
-                    {isSpinning ? "Spinning..." : "Spin"}
-                </button>
+                {mode === 'MANUAL' ? (
+                    <>
+                        <div>
+                           <label className="text-gray-400 text-xs font-bold uppercase">Chip Value</label>
+                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
+                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                        </div>
+                        
+                        <div className="text-xs text-gray-500 mt-2">Total Bet: ${(betAmount * selectedBets.length).toFixed(2)}</div>
+
+                        <div className="bg-[#0f141d] p-2 rounded text-[10px] text-gray-500 font-mono break-all">
+                            Next Nonce: {nonce}
+                        </div>
+
+                        <button 
+                            onClick={spin} 
+                            disabled={isSpinning || selectedBets.length === 0 || balance < (betAmount * selectedBets.length)} 
+                            className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}
+                        >
+                            {isSpinning ? "Spinning..." : "Spin"}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div>
+                           <label className="text-gray-400 text-xs font-bold uppercase">Chip Value</label>
+                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">Total Bet: ${(betAmount * selectedBets.length).toFixed(2)}</div>
+                        
+                        <AutobetControls 
+                            settings={settings}
+                            onChange={setSettings}
+                            onStart={() => { startAutoBet(); setTimeout(() => setAutoTrigger(t => t + 1), 0); }}
+                            onStop={stopAutoBet}
+                            isRunning={isAutoBetting}
+                            balance={balance}
+                        />
+                    </>
+                )}
             </div>
             
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-6 overflow-auto">
+            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-6 overflow-auto relative">
                 
                 {/* Wheel / Result */}
                 <div className="mb-8 relative w-24 h-24 flex items-center justify-center">
@@ -132,11 +215,6 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
                         {/* Numbers Grid */}
                         <div className="flex-1 grid grid-cols-12 gap-1">
-                            {/* We need to arrange mostly like a real board: 3 rows. 
-                                Standard board is 3,6,9... top row.
-                                Let's stick to numerical order for simplicity in this flex grid, 
-                                but grouped by dozens usually.
-                            */}
                             {Array.from({length: 36}, (_, i) => i + 1).map(n => {
                                 const color = getColor(n);
                                 return (
@@ -190,6 +268,13 @@ const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                     </div>
 
                 </div>
+
+                {/* Overlay for Auto Bet Status */}
+                 {isAutoBetting && (
+                    <div className="absolute top-4 right-4 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                        AUTOBET ACTIVE
+                    </div>
+                )}
             </div>
         </div>
     );
