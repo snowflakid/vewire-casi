@@ -4,6 +4,7 @@ import { ProvablyFair } from '../utils/provably-fair';
 import { useAutoBet } from '../hooks/useAutoBet';
 import AutobetControls from '../components/AutobetControls';
 import { Hand, Scissors, FileText } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
 
 const MOVES = [
     { id: 0, name: 'Rock', icon: Hand, color: 'text-gray-400', bg: 'bg-gray-800' },
@@ -12,6 +13,7 @@ const MOVES = [
 ];
 
 const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
     const [betAmount, setBetAmount] = useState(10);
     const [selectedMove, setSelectedMove] = useState<number>(0);
     const [computerMove, setComputerMove] = useState<number | null>(null);
@@ -37,8 +39,10 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const play = useCallback(() => {
         if (balance < betAmount) {
             stopAutoBet();
+            playSound('error');
             return;
         }
+        playSound('click');
 
         setBalance(b => b - betAmount);
         setIsPlaying(true);
@@ -59,10 +63,6 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
             // Logic: (Player - Computer + 3) % 3
             // 0 = Tie, 1 = Win, 2 = Lose
-            // But wait, my previous mental check:
-            // R(0) vs S(2) -> 0-2 = -2 -> 1 (Win).
-            // P(1) vs R(0) -> 1-0 = 1 (Win).
-            // S(2) vs P(1) -> 2-1 = 1 (Win).
             
             const diff = (selectedMove - outcome + 3) % 3;
             let winAmount = 0;
@@ -72,14 +72,17 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 // Tie - Push
                 res = 'TIE';
                 winAmount = betAmount; // Return bet
+                playSound('cashout'); // Neutral
             } else if (diff === 1) {
                 // Win
                 res = 'WIN';
                 winAmount = betAmount * 2;
+                playSound('win');
             } else {
                 // Lose
                 res = 'LOSE';
                 winAmount = 0;
+                playSound('lose');
             }
 
             setResult(res);
@@ -87,31 +90,16 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 setBalance(b => b + winAmount);
             }
             
-            // For auto bet, we consider Tie a "win" in terms of "not losing money"?
-            // processResult expects "win" boolean.
-            // If Tie, we didn't lose, but didn't profit.
-            // If we return true, onWin triggers. If false, onLoss triggers.
-            // Usually Tie is neutral.
-            // Let's treat Tie as a 'win' (true) for keeping the streak? 
-            // Or maybe false but profit is 0?
-            // processResult logic: profit = winAmount - currentBet.
-            // Tie: profit = 10 - 10 = 0.
-            // Win: profit = 20 - 10 = 10.
-            // Loss: profit = 0 - 10 = -10.
-            // So if we pass true/false based on profit >= 0?
-            
-            onGameEnd(winAmount >= betAmount, winAmount);
+            onGameEnd(winAmount >= betAmount, winAmount, betAmount);
 
             if (isAutoBetting) {
-                // Continue if profit >= 0? Or just if not bankrupt?
-                // Standard: Win=True, Tie=True (or distinct), Lose=False.
                 const continueAuto = processResult(winAmount >= betAmount, winAmount);
                 if (continueAuto) {
                     setTimeout(() => setAutoTrigger(t => t + 1), 1000);
                 }
             }
         }, 600);
-    }, [balance, betAmount, selectedMove, serverSeed, clientSeed, nonce, isAutoBetting, processResult, stopAutoBet, setBalance, onGameEnd]);
+    }, [balance, betAmount, selectedMove, serverSeed, clientSeed, nonce, isAutoBetting, processResult, stopAutoBet, setBalance, onGameEnd, playSound]);
 
     useEffect(() => {
         if (isAutoBetting && autoTrigger > 0) {
@@ -123,33 +111,33 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
         <div className="flex flex-col lg:flex-row gap-6 h-full">
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
                 {/* Mode Tabs */}
-                <div className="bg-[#0f141d] p-1 rounded-lg flex text-sm font-bold mb-2">
+                <div className="bg-vewire-input p-1 rounded-lg flex text-sm font-bold mb-2">
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('MANUAL')}
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('MANUAL'); }}
                         disabled={isPlaying || isAutoBetting}
                     >
-                        Manual
+                        {t('game.manual')}
                     </button>
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('AUTO')}
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('AUTO'); }}
                         disabled={isPlaying || isAutoBetting}
                     >
-                        Auto
+                        {t('game.auto')}
                     </button>
                 </div>
 
                 {mode === 'MANUAL' ? (
                     <>
                         <div>
-                           <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                            <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
                         
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
                         </div>
 
                         <div className="text-xs text-gray-500 mt-2">Win 2x • Tie Push</div>
@@ -159,13 +147,13 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             disabled={isPlaying || balance < betAmount} 
                             className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}
                         >
-                            {isPlaying ? "Playing..." : "Bet"}
+                            {isPlaying ? t('game.spinning') : t('game.bet')}
                         </button>
                     </>
                 ) : (
                     <>
                         <div>
-                           <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                            <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
                         
@@ -181,14 +169,14 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 )}
             </div>
             
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-8 relative">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-center p-8 relative">
                 
                 {/* Result Message */}
                 {result && !isPlaying && (
                     <div className={`absolute top-10 text-4xl font-black animate-in zoom-in
                         ${result === 'WIN' ? 'text-green-500' : result === 'LOSE' ? 'text-red-500' : 'text-gray-400'}
                     `}>
-                        {result === 'WIN' ? 'YOU WON!' : result === 'LOSE' ? 'YOU LOST' : 'IT\'S A TIE'}
+                        {result === 'WIN' ? t('game.you_win') : result === 'LOSE' ? 'YOU LOST' : t('game.push')}
                     </div>
                 )}
 
@@ -203,7 +191,7 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                                 return (
                                     <button 
                                         key={m.id}
-                                        onClick={() => setSelectedMove(m.id)}
+                                        onClick={() => { playSound('click'); setSelectedMove(m.id); }}
                                         disabled={isPlaying || isAutoBetting}
                                         className={`
                                             p-4 rounded-xl border-2 transition-all duration-200 flex flex-col items-center gap-2
@@ -244,7 +232,7 @@ const RockPaperScissors = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 {/* Overlay for Auto Bet Status */}
                  {isAutoBetting && (
                     <div className="absolute top-4 right-4 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                        AUTOBET ACTIVE
+                        {t('game.autobet_active')}
                     </div>
                 )}
             </div>

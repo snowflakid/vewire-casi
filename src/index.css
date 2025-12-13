@@ -1,1 +1,117 @@
 @import "tailwindcss";
+
+@theme {
+  --color-vewire-bg: var(--color-bg);
+  --color-vewire-sidebar: var(--color-sidebar);
+  --color-vewire-card: var(--color-card);
+  --color-vewire-input: var(--color-input);
+  --color-vewire-accent: var(--color-accent);
+  --color-vewire-accent-hover: var(--color-accent-hover);
+  --color-vewire-border: var(--color-border);
+}
+
+:root {
+  /* Default Theme (Stake-like) */
+  --color-bg: #0b0e11;
+  --color-sidebar: #1a202c;
+  --color-card: #212735;
+  --color-input: #0f141d;
+  --color-accent: #00E701;
+  --color-accent-hover: #00c201;
+  --color-border: #1f2937; /* gray-800 */
+}
+
+[data-theme='midnight'] {
+  --color-bg: #0f172a;
+  --color-sidebar: #1e293b;
+  --color-card: #334155;
+  --color-input: #0f172a;
+  --color-accent: #38bdf8; /* sky-400 */
+  --color-accent-hover: #0ea5e9;
+  --color-border: #334155;
+}
+
+[data-theme='cyberpunk'] {
+  --color-bg: #12001f;
+  --color-sidebar: #2a0038;
+  --color-card: #3d0052;
+  --color-input: #1a0026;
+  --color-accent: #d946ef; /* fuchsia-500 */
+  --color-accent-hover: #c026d3;
+  --color-border: #4a044e;
+}
+
+[data-theme='luxury'] {
+  --color-bg: #000000;
+  --color-sidebar: #111111;
+  --color-card: #1a1a1a;
+  --color-input: #0a0a0a;
+  --color-accent: #ffd700; /* Gold */
+  --color-accent-hover: #e6c200;
+  --color-border: #333333;
+}
+
+[data-theme='forest'] {
+  --color-bg: #05190b;
+  --color-sidebar: #0a2f16;
+  --color-card: #123d21;
+  --color-input: #021206;
+  --color-accent: #34d399; /* emerald-400 */
+  --color-accent-hover: #10b981;
+  --color-border: #064e3b;
+}
+
+[data-theme='sunset'] {
+  --color-bg: #1f0f0f;
+  --color-sidebar: #381a1a;
+  --color-card: #522525;
+  --color-input: #1a0808;
+  --color-accent: #fb923c; /* orange-400 */
+  --color-accent-hover: #f97316;
+  --color-border: #5e2828;
+}
+
+[data-theme='ocean'] {
+  --color-bg: #020617;
+  --color-sidebar: #0f172a;
+  --color-card: #1e293b;
+  --color-input: #020617;
+  --color-accent: #22d3ee; /* cyan-400 */
+  --color-accent-hover: #06b6d4;
+  --color-border: #1e3a8a;
+}
+
+body {
+    background-color: var(--color-bg);
+    color: #e5e7eb; /* gray-200 */
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Add a subtle background pattern */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 24px 24px;
+    pointer-events: none;
+    z-index: -1;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg); 
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-card); 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent); 
+}

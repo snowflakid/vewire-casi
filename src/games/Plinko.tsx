@@ -4,6 +4,7 @@ import { ProvablyFair } from '../utils/provably-fair';
 import { PLINKO_CONFIG } from './plinko-data';
 import { useAutoBet } from '../hooks/useAutoBet';
 import AutobetControls from '../components/AutobetControls';
+import { useSettings } from '../context/SettingsContext';
 
 interface ActiveBall {
     id: number;
@@ -16,6 +17,7 @@ interface ActiveBall {
 }
 
 const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
     const [betAmount, setBetAmount] = useState(10);
     const [rows, setRows] = useState<number>(16);
     const [risk, setRisk] = useState<'LOW' | 'MEDIUM' | 'HIGH'>('MEDIUM');
@@ -102,7 +104,10 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
                         setBalance(b => b + win);
                         setHistory(prev => [{ val: resultMult, id: ball.id }, ...prev].slice(0, 50));
-                        onGameEnd(win >= ball.betAmount, win);
+                        onGameEnd(win >= ball.betAmount, win, ball.betAmount);
+
+                        if (win >= ball.betAmount) playSound('win');
+                        else playSound('lose');
 
                         // Auto Bet Trigger (Sequential)
                         if (currentIsAuto) {
@@ -123,7 +128,7 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         });
         
         requestRef.current = requestAnimationFrame(animate);
-    }, [setBalance, onGameEnd]);
+    }, [setBalance, onGameEnd, playSound]);
 
     useEffect(() => {
         requestRef.current = requestAnimationFrame(animate);
@@ -133,8 +138,10 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const dropBall = useCallback(() => {
         if (balance < betAmount) {
             stopAutoBet();
+            playSound('error');
             return;
         }
+        playSound('click');
         setBalance(b => b - betAmount);
         
         const currentNonce = nonce;
@@ -152,7 +159,7 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             y: 0,
             betAmount: betAmount
         }]);
-    }, [balance, betAmount, rows, nonce, serverSeed, clientSeed, stopAutoBet, setBalance]);
+    }, [balance, betAmount, rows, nonce, serverSeed, clientSeed, stopAutoBet, setBalance, playSound]);
 
     useEffect(() => {
         if (isAutoBetting && autoTrigger > 0) {
@@ -166,27 +173,27 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             {/* Controls (Left) */}
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border} h-full overflow-y-auto`}>
                 {/* Mode Tabs */}
-                <div className="bg-[#0f141d] p-1 rounded-lg flex text-sm font-bold mb-2">
+                <div className="bg-vewire-input p-1 rounded-lg flex text-sm font-bold mb-2">
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('MANUAL')}
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('MANUAL'); }}
                         disabled={isAutoBetting}
                     >
-                        Manual
+                        {t('game.manual')}
                     </button>
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('AUTO')}
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('AUTO'); }}
                         disabled={isAutoBetting}
                     >
-                        Auto
+                        {t('game.auto')}
                     </button>
                 </div>
 
                 {mode === 'MANUAL' ? (
                     <>
                         <div>
-                           <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                            <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">$</span>
                                 <input 
@@ -199,14 +206,14 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                                 />
                            </div>
                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
                            </div>
                         </div>
                         
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="text-gray-400 text-xs font-bold uppercase">Rows</label>
+                                <label className="text-gray-400 text-xs font-bold uppercase">{t('game.rows')}</label>
                                 <select 
                                     value={rows} 
                                     onChange={(e) => setRows(Number(e.target.value))}
@@ -216,25 +223,25 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-gray-400 text-xs font-bold uppercase">Risk</label>
+                                <label className="text-gray-400 text-xs font-bold uppercase">{t('game.risk')}</label>
                                 <select 
                                     value={risk} 
                                     onChange={(e) => setRisk(e.target.value as any)}
                                     className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`}
                                 >
-                                    <option value="LOW">Low</option>
-                                    <option value="MEDIUM">Medium</option>
-                                    <option value="HIGH">High</option>
+                                    <option value="LOW">{t('game.low')}</option>
+                                    <option value="MEDIUM">{t('game.medium')}</option>
+                                    <option value="HIGH">{t('game.high')}</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div className="bg-[#0f141d] p-2 rounded text-[10px] text-gray-500 font-mono break-all">
+                        <div className="bg-vewire-input p-2 rounded text-[10px] text-gray-500 font-mono break-all">
                             Seed Hash: {ProvablyFair.hashSeed(serverSeed).substring(0, 15)}...
                         </div>
 
                         <button onClick={dropBall} disabled={balance < betAmount} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto hover:opacity-90 active:scale-95 transition-all disabled:opacity-50`}>
-                            Drop Ball
+                            {t('game.bet')}
                         </button>
                     </>
                 ) : (
@@ -250,7 +257,7 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             </div>
             
             {/* Game Board (Center) */}
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-center p-4 relative overflow-hidden">
                 <div className="relative w-full max-w-[600px] aspect-square flex flex-col items-center justify-between py-8">
                     {/* Pins */}
                     <div className="flex-1 w-full relative">
@@ -308,14 +315,14 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 {/* Overlay for Auto Bet Status */}
                  {isAutoBetting && (
                     <div className="absolute top-4 right-4 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                        AUTOBET ACTIVE
+                        {t('game.autobet_active')}
                     </div>
                 )}
             </div>
 
             {/* History Strip (Right) */}
-            <div className="w-24 bg-[#1a202c] rounded-xl border border-gray-800 flex flex-col overflow-hidden hidden lg:flex">
-                <div className="p-3 text-xs font-bold text-gray-400 text-center border-b border-gray-800 uppercase">History</div>
+            <div className="w-24 bg-vewire-sidebar rounded-xl border border-vewire-border flex flex-col overflow-hidden hidden lg:flex">
+                <div className="p-3 text-xs font-bold text-gray-400 text-center border-b border-vewire-border uppercase">History</div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
                     {history.map((h) => (
                         <div 
@@ -323,7 +330,7 @@ const PlinkoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             className={`
                                 animate-in slide-in-from-top-2 duration-300
                                 w-full py-2 rounded flex items-center justify-center text-xs font-bold border 
-                                ${h.val >= 1 ? 'bg-green-500/20 text-green-500 border-green-500/50' : 'bg-gray-700/50 text-gray-500 border-gray-700'}
+                                ${h.val >= 1 ? 'bg-green-500/20 text-green-500 border-green-500/50' : 'bg-vewire-input text-gray-500 border-vewire-border'}
                             `}
                         >
                             {h.val}x

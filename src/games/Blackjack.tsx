@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
+import { useSettings } from '../context/SettingsContext';
 
 // Types
 type Suit = '♠' | '♥' | '♣' | '♦';
@@ -16,6 +17,7 @@ const SUITS: Suit[] = ['♠', '♥', '♣', '♦'];
 const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
 const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
     const [betAmount, setBetAmount] = useState(10);
     const [playerHand, setPlayerHand] = useState<Card[]>([]);
     const [dealerHand, setDealerHand] = useState<Card[]>([]);
@@ -49,11 +51,17 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             });
         });
 
-        // Ensure RNG sequence is consistent
-        ProvablyFair.generateResult(serverSeed, clientSeed, gameNonce);
+        // Fisher-Yates Shuffle using Provably Fair RNG
+        // We need 51 random numbers to shuffle 52 cards (last one falls in place)
+        const floats = ProvablyFair.generateFloats(serverSeed, clientSeed, gameNonce, newDeck.length);
         
-        // Simple shuffle
-        return newDeck.sort(() => Math.random() - 0.5); 
+        for (let i = newDeck.length - 1; i > 0; i--) {
+            // floats[i] is 0..1. Scale to 0..i+1
+            const j = Math.floor(floats[i] * (i + 1));
+            [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
+        }
+        
+        return newDeck; 
     }, [serverSeed, clientSeed]);
 
     const calculateScore = useCallback((hand: Card[]) => {
@@ -78,28 +86,34 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
         switch (result) {
             case 'BLACKJACK':
-                msg = 'BLACKJACK!';
+                msg = t('game.blackjack');
                 winAmount = payout;
+                playSound('win');
                 break;
             case 'BUST':
-                msg = 'BUST!';
+                msg = t('game.bust');
                 winAmount = 0;
+                playSound('lose');
                 break;
             case 'PUSH':
-                msg = 'PUSH';
+                msg = t('game.push');
                 winAmount = payout; // Return bet
+                playSound('cashout'); // Neutral sound
                 break;
             case 'WIN':
-                msg = 'YOU WIN!';
+                msg = t('game.you_win');
                 winAmount = payout;
+                playSound('win');
                 break;
             case 'LOSE':
-                msg = 'DEALER WINS';
+                msg = t('game.dealer_wins');
                 winAmount = 0;
+                playSound('lose');
                 break;
             case 'DEALER_BUST':
-                msg = 'DEALER BUST!';
+                msg = t('game.bust'); // Technically Dealer bust but 'Bust!' works or can use dealer bust key if added
                 winAmount = payout;
+                playSound('win');
                 break;
         }
 
@@ -107,11 +121,15 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         if (winAmount > 0) {
             setBalance(b => b + winAmount);
         }
-        onGameEnd(winAmount > 0, winAmount);
-    }, [setBalance, onGameEnd]);
+        onGameEnd(winAmount > 0, winAmount, betAmount);
+    }, [setBalance, onGameEnd, betAmount, t, playSound]);
 
     const deal = () => {
-        if (balance < betAmount) return;
+        if (balance < betAmount) {
+            playSound('error');
+            return;
+        }
+        playSound('click');
         setBalance(b => b - betAmount);
         
         const currentDeck = generateDeck(nonce);
@@ -143,6 +161,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
     const hit = () => {
         if (gameState !== 'PLAYING') return;
+        playSound('click');
         
         const newDeck = [...deck];
         const card = newDeck.pop();
@@ -183,6 +202,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 const newDeck = [...currentDeck];
                 const card = newDeck.pop();
                 if (card) {
+                    playSound('tick'); // Card flip sound
                     const newHand = [...hand, card];
                     setDealerHand(newHand);
                     setDeck(newDeck); // Sync state
@@ -196,14 +216,19 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
     const stand = () => {
         if (gameState !== 'PLAYING') return;
+        playSound('click');
         setGameState('DEALER_TURN');
         playDealerTurn(dealerHand, deck, playerHand, 1);
     };
 
     const double = () => {
         if (gameState !== 'PLAYING' || playerHand.length !== 2) return;
-        if (balance < betAmount) return;
+        if (balance < betAmount) {
+            playSound('error');
+            return;
+        }
         
+        playSound('click');
         setBalance(b => b - betAmount);
         
         const newDeck = [...deck];
@@ -228,24 +253,24 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         <div className="flex flex-col lg:flex-row gap-6 h-full">
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
                 <div>
-                   <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                   <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                    <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={gameState !== 'BETTING'} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                     <button onClick={() => setBetAmount(b => b / 2)} disabled={gameState !== 'BETTING'} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                     <button onClick={() => setBetAmount(b => b * 2)} disabled={gameState !== 'BETTING'} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                     <button onClick={() => setBetAmount(b => b / 2)} disabled={gameState !== 'BETTING'} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                     <button onClick={() => setBetAmount(b => b * 2)} disabled={gameState !== 'BETTING'} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
                 </div>
 
                 {gameState === 'BETTING' ? (
                     <button onClick={deal} disabled={balance < betAmount} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto hover:scale-105 transition-transform`}>
-                        Deal
+                        {t('game.deal')}
                     </button>
                 ) : (
                     <div className="grid grid-cols-2 gap-2 mt-auto">
-                        <button onClick={hit} disabled={gameState !== 'PLAYING'} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg uppercase">Hit</button>
-                        <button onClick={stand} disabled={gameState !== 'PLAYING'} className="bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-lg uppercase">Stand</button>
-                        <button onClick={double} disabled={gameState !== 'PLAYING' || playerHand.length !== 2 || balance < betAmount} className="col-span-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-4 rounded-lg uppercase">Double</button>
+                        <button onClick={hit} disabled={gameState !== 'PLAYING'} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg uppercase">{t('game.hit')}</button>
+                        <button onClick={stand} disabled={gameState !== 'PLAYING'} className="bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-lg uppercase">{t('game.stand')}</button>
+                        <button onClick={double} disabled={gameState !== 'PLAYING' || playerHand.length !== 2 || balance < betAmount} className="col-span-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-4 rounded-lg uppercase">{t('game.double')}</button>
                     </div>
                 )}
                 
@@ -256,10 +281,10 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 )}
             </div>
             
-            <div className="flex-1 bg-[#0d4d23] rounded-xl border border-[#1e6b36] flex flex-col items-center justify-between p-8 relative overflow-hidden shadow-inner min-h-[500px]">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-between p-8 relative overflow-hidden shadow-inner min-h-[500px]">
                 {/* Dealer Hand */}
                 <div className="flex flex-col items-center">
-                    <div className="text-green-200 text-xs font-bold uppercase mb-2">Dealer {gameState === 'ENDED' ? calculateScore(dealerHand) : ''}</div>
+                    <div className="text-gray-400 text-xs font-bold uppercase mb-2">{t('game.dealer')} {gameState === 'ENDED' ? calculateScore(dealerHand) : ''}</div>
                     <div className="flex -space-x-4">
                         {dealerHand.map((card, i) => (
                             <CardView key={i} card={card} hidden={i === 0 && gameState === 'PLAYING'} />
@@ -285,7 +310,7 @@ const BlackjackGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             <CardView key={i} card={card} />
                         ))}
                     </div>
-                    <div className="text-white font-bold bg-black/40 px-4 py-1 rounded-full border border-white/10 shadow-lg">
+                    <div className="text-white font-bold bg-vewire-card px-4 py-1 rounded-full border border-vewire-border shadow-lg">
                         {calculateScore(playerHand)}
                     </div>
                 </div>

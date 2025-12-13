@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, Fragment } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
 import { getKenoPayout } from './plinko-data'; 
@@ -81,9 +81,9 @@ const KenoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 if (multiplier > 0) {
                     win = betAmount * multiplier;
                     setBalance(b => b + win);
-                    onGameEnd(true, win);
+                    onGameEnd(true, win, betAmount);
                 } else {
-                    onGameEnd(false, 0);
+                    onGameEnd(false, 0, betAmount);
                 }
 
                 if (isAutoBetting) {
@@ -108,16 +108,16 @@ const KenoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         <div className="flex flex-col lg:flex-row gap-6 h-full">
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
                 {/* Mode Tabs */}
-                <div className="bg-[#0f141d] p-1 rounded-lg flex text-sm font-bold mb-2">
+                <div className="bg-vewire-input p-1 rounded-lg flex text-sm font-bold mb-2">
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
                         onClick={() => setMode('MANUAL')}
                         disabled={isPlaying || isAutoBetting}
                     >
                         Manual
                     </button>
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
                         onClick={() => setMode('AUTO')}
                         disabled={isPlaying || isAutoBetting}
                     >
@@ -126,47 +126,49 @@ const KenoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 </div>
 
                 {mode === 'MANUAL' ? (
-                    <>
+                    <Fragment>
                         <div>
                            <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
-                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                           <div className="relative">
+                               <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                           </div>
+                           
+                           <div className="grid grid-cols-2 gap-2 mt-2">
+                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
+                           </div>
                         </div>
-                        
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
-                        </div>
-                        
-                        <div>
-                            <label className="text-gray-400 text-xs font-bold uppercase">Risk</label>
-                            <select 
-                                value={risk} 
-                                onChange={(e) => setRisk(e.target.value as any)}
-                                className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`}
-                            >
-                                <option value="CLASSIC">Classic</option>
-                                <option value="LOW">Low</option>
-                                <option value="HIGH">High</option>
-                            </select>
-                        </div>
+                           
+                           <div>
+                               <label className="text-gray-400 text-xs font-bold uppercase">Risk</label>
+                               <select 
+                                   value={risk} 
+                                   onChange={(e) => setRisk(e.target.value as any)}
+                                   className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`}
+                               >
+                                   <option value="CLASSIC">Classic</option>
+                                   <option value="LOW">Low</option>
+                                   <option value="HIGH">High</option>
+                               </select>
+                           </div>
 
-                        <div className="text-xs text-gray-500">Pick up to 10 numbers</div>
-                        
-                        <button 
-                            onClick={play} 
-                            disabled={isPlaying || selected.length === 0 || balance < betAmount} 
-                            className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}
-                        >
-                            Bet
-                        </button>
-                    </>
+                           <div className="text-xs text-gray-500">Pick up to 10 numbers</div>
+                           
+                           <button 
+                               onClick={play} 
+                               disabled={isPlaying || selected.length === 0 || balance < betAmount} 
+                               className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}
+                           >
+                               Bet
+                           </button>
+                    </Fragment>
                 ) : (
-                     <>
+                    <Fragment>
                         <div>
                            <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
                            <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                         </div>
-                         
+                        
                         <div>
                             <label className="text-gray-400 text-xs font-bold uppercase">Risk</label>
                             <select 
@@ -189,11 +191,11 @@ const KenoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             isRunning={isAutoBetting}
                             balance={balance}
                         />
-                    </>
+                    </Fragment>
                 )}
 
                 {/* Payout Table visualization - Show in both modes */}
-                <div className="bg-[#0f141d] p-3 rounded-lg border border-gray-800 text-xs mt-4">
+                <div className="bg-vewire-input p-3 rounded-lg border border-vewire-border text-xs mt-4">
                     <div className="flex justify-between text-gray-500 mb-1">
                         <span>Hits</span>
                         <span>Payout</span>
@@ -211,17 +213,17 @@ const KenoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 </div>
             </div>
             
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex items-center justify-center p-6 relative">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex items-center justify-center p-6 relative">
                 <div className="grid grid-cols-8 gap-2 w-full max-w-2xl">
                     {Array.from({length: 40}, (_, i) => i + 1).map(n => {
                         const isSelected = selected.includes(n);
                         const isDrawn = drawn.includes(n);
                         const isHit = isSelected && isDrawn;
                         
-                        let bg = 'bg-[#1a202c]';
-                        if (isHit) bg = 'bg-green-500 text-black shadow-[0_0_10px_#00E701] scale-110 z-10';
+                        let bg = 'bg-vewire-card text-gray-400';
+                        if (isHit) bg = 'bg-vewire-accent text-black shadow-[0_0_10px_currentColor] scale-110 z-10';
                         else if (isDrawn) bg = 'bg-red-500/50 text-white';
-                        else if (isSelected) bg = 'bg-white text-black';
+                        else if (isSelected) bg = 'bg-vewire-input border-2 border-vewire-accent text-white';
                         
                         return (
                             <button

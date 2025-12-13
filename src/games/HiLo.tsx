@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { THEME, type GameProps } from '../config';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import { ProvablyFair } from '../utils/provably-fair';
+import { useSettings } from '../context/SettingsContext';
 
 // Card suits and values
 const SUITS = ['♠', '♥', '♣', '♦'];
@@ -19,6 +20,7 @@ interface Card {
 }
 
 const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
     const [betAmount, setBetAmount] = useState(10);
     // const [isPlaying, setIsPlaying] = useState(false);
     const [currentCard, setCurrentCard] = useState<Card | null>(null);
@@ -53,7 +55,7 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         
         const rank = RANKS[rankIdx];
         const suit = SUITS[suitIdx];
-        const color = (suit === '♥' || suit === '♦') ? 'text-red-500' : 'text-white'; // actually black is usually white on dark mode
+        const color = (suit === '♥' || suit === '♦') ? 'text-red-500' : 'text-black';
         
         return {
             rank,
@@ -64,7 +66,11 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     };
 
     const startGame = () => {
-        if (balance < betAmount) return;
+        if (balance < betAmount) {
+            playSound('error');
+            return;
+        }
+        playSound('click');
         setBalance(b => b - betAmount);
         setGameState('PLAYING');
         // setIsPlaying(true);
@@ -101,6 +107,7 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
 
     const guess = (prediction: 'HI' | 'LO' | 'SAME') => {
         if (!currentCard || gameState !== 'PLAYING') return;
+        playSound('click');
 
         const nextCard = generateCard(0); // New random draw
         setNonce(n => n + 1);
@@ -119,6 +126,7 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         setHistory(prev => [nextCard, ...prev]);
 
         if (won) {
+             playSound('tick');
              const probs = getProbabilities(currentCard.value);
              let factor = 1;
              if(prediction === 'HI') factor = probs.high;
@@ -130,17 +138,20 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
              setRoundWinnings(betAmount * newMult);
         } else {
             // Loss
+            playSound('lose');
             setGameState('BETTING');
             // setIsPlaying(false);
-            onGameEnd(false, 0);
+            onGameEnd(false, 0, betAmount);
         }
     };
 
     const cashout = () => {
+        playSound('cashout');
         setBalance(b => b + roundWinnings);
         setGameState('BETTING');
         // setIsPlaying(false);
-        onGameEnd(true, roundWinnings);
+        onGameEnd(true, roundWinnings, betAmount);
+        playSound('win');
     };
 
     const probs = currentCard ? getProbabilities(currentCard.value) : { high: 0, low: 0, same: 0 };
@@ -152,21 +163,21 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 {gameState === 'BETTING' ? (
                     <>
                         <div>
-                           <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                            <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
                            </div>
                         </div>
                         <button onClick={startGame} className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto hover:opacity-90 transition-all`}>
-                            Bet
+                            {t('game.bet')}
                         </button>
                     </>
                 ) : (
                     <div className="flex flex-col gap-4 h-full">
                          <div className="text-center">
-                             <div className="text-gray-400 text-xs font-bold uppercase">Current Win</div>
+                             <div className="text-gray-400 text-xs font-bold uppercase">{t('game.current_win')}</div>
                              <div className="text-2xl font-bold text-green-500">${roundWinnings.toFixed(2)}</div>
                              <div className="text-xs text-gray-500">{multiplier.toFixed(2)}x</div>
                          </div>
@@ -175,18 +186,18 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                              <button 
                                 onClick={() => guess('HI')}
                                 disabled={probs.high === 0}
-                                className="bg-[#2f3847] hover:bg-gray-600 p-3 rounded-lg flex flex-col items-center gap-1 disabled:opacity-50"
+                                className="bg-vewire-input hover:bg-vewire-card p-3 rounded-lg flex flex-col items-center gap-1 disabled:opacity-50 border border-vewire-border"
                              >
-                                 <span className="text-xs font-bold text-gray-400">HIGHER</span>
+                                 <span className="text-xs font-bold text-gray-400">{t('game.higher')}</span>
                                  <span className="text-white font-bold">{probs.high.toFixed(2)}x</span>
                                  <ArrowUp size={16} />
                              </button>
                              <button 
                                 onClick={() => guess('LO')}
                                 disabled={probs.low === 0}
-                                className="bg-[#2f3847] hover:bg-gray-600 p-3 rounded-lg flex flex-col items-center gap-1 disabled:opacity-50"
+                                className="bg-vewire-input hover:bg-vewire-card p-3 rounded-lg flex flex-col items-center gap-1 disabled:opacity-50 border border-vewire-border"
                              >
-                                 <span className="text-xs font-bold text-gray-400">LOWER</span>
+                                 <span className="text-xs font-bold text-gray-400">{t('game.lower')}</span>
                                  <span className="text-white font-bold">{probs.low.toFixed(2)}x</span>
                                  <ArrowDown size={16} />
                              </button>
@@ -194,20 +205,20 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                          
                          <button 
                             onClick={() => guess('SAME')}
-                            className="bg-[#2f3847] hover:bg-gray-600 p-3 rounded-lg flex items-center justify-between px-4"
+                            className="bg-vewire-input hover:bg-vewire-card p-3 rounded-lg flex items-center justify-between px-4 border border-vewire-border"
                          >
-                             <span className="text-xs font-bold text-gray-400">SAME</span>
+                             <span className="text-xs font-bold text-gray-400">{t('game.same')}</span>
                              <span className="text-white font-bold">{probs.same.toFixed(2)}x</span>
                          </button>
 
                          <button onClick={cashout} className="bg-green-500 hover:bg-green-400 text-black font-bold py-4 rounded-lg uppercase mt-4">
-                             Cashout
+                             {t('game.cashout')}
                          </button>
                     </div>
                 )}
             </div>
             
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-center p-8 relative overflow-hidden">
                 {currentCard ? (
                     <div className="flex flex-col items-center">
                          {/* Card Display */}
@@ -221,19 +232,19 @@ const HiLoGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                          {gameState === 'PLAYING' && (
                              <div className="flex justify-between w-64 mt-8">
                                  <div className="text-center">
-                                     <div className="text-xs uppercase font-bold text-gray-500">Lower</div>
+                                     <div className="text-xs uppercase font-bold text-gray-500">{t('game.lower')}</div>
                                      <div className="text-white font-bold">{((probs.low > 0 ? 0.99/probs.low : 0) * 100).toFixed(0)}%</div>
                                  </div>
                                  <div className="text-center">
-                                     <div className="text-xs uppercase font-bold text-gray-500">Higher</div>
+                                     <div className="text-xs uppercase font-bold text-gray-500">{t('game.higher')}</div>
                                      <div className="text-white font-bold">{((probs.high > 0 ? 0.99/probs.high : 0) * 100).toFixed(0)}%</div>
                                  </div>
                              </div>
                          )}
                     </div>
                 ) : (
-                    <div className="w-48 h-72 border-4 border-dashed border-gray-700 rounded-2xl flex items-center justify-center">
-                        <span className="text-gray-700 font-bold text-2xl">HI-LO</span>
+                    <div className="w-48 h-72 border-4 border-dashed border-vewire-border rounded-2xl flex items-center justify-center">
+                        <span className="text-gray-500 font-bold text-2xl">HI-LO</span>
                     </div>
                 )}
 

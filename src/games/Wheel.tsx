@@ -3,6 +3,7 @@ import { THEME, type GameProps } from '../config';
 import { ProvablyFair } from '../utils/provably-fair';
 import { useAutoBet } from '../hooks/useAutoBet';
 import AutobetControls from '../components/AutobetControls';
+import { useSettings } from '../context/SettingsContext';
 
 interface Segment {
     multiplier: number;
@@ -19,6 +20,7 @@ const RAW_SEGMENTS = [
 ];
 
 const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
     const [betAmount, setBetAmount] = useState(10);
     const [isSpinning, setIsSpinning] = useState(false);
     const [rotation, setRotation] = useState(0);
@@ -70,9 +72,11 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
     const spin = useCallback(() => {
         if (balance < betAmount || isSpinning) {
             stopAutoBet();
+            playSound('error');
             return;
         }
         
+        playSound('click');
         setBalance(b => b - betAmount);
         setIsSpinning(true);
         setLastWin(null);
@@ -103,7 +107,10 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
             const win = betAmount * resultSegment.multiplier;
             setBalance(b => b + win);
             setLastWin(resultSegment.multiplier);
-            onGameEnd(win >= betAmount, win);
+            onGameEnd(win >= betAmount, win, betAmount);
+
+            if (win >= betAmount) playSound('win');
+            else playSound('lose');
 
             if (isAutoBetting) {
                 const continueAuto = processResult(win >= betAmount, win);
@@ -112,7 +119,7 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 }
             }
         }, 3000); 
-    }, [balance, betAmount, isSpinning, rotation, segments, serverSeed, clientSeed, nonce, setBalance, onGameEnd, isAutoBetting, processResult, stopAutoBet]);
+    }, [balance, betAmount, isSpinning, rotation, segments, serverSeed, clientSeed, nonce, setBalance, onGameEnd, isAutoBetting, processResult, stopAutoBet, playSound]);
 
     useEffect(() => {
         if (isAutoBetting && autoTrigger > 0) {
@@ -124,27 +131,27 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
         <div className="flex flex-col lg:flex-row gap-6 h-full">
             <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
                 {/* Mode Tabs */}
-                <div className="bg-[#0f141d] p-1 rounded-lg flex text-sm font-bold mb-2">
+                <div className="bg-vewire-input p-1 rounded-lg flex text-sm font-bold mb-2">
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('MANUAL')}
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('MANUAL'); }}
                         disabled={isSpinning || isAutoBetting}
                     >
-                        Manual
+                        {t('game.manual')}
                     </button>
                     <button 
-                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-[#212735] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
-                        onClick={() => setMode('AUTO')}
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('AUTO'); }}
                         disabled={isSpinning || isAutoBetting}
                     >
-                        Auto
+                        {t('game.auto')}
                     </button>
                 </div>
 
                 {mode === 'MANUAL' ? (
                     <>
                         <div>
-                           <label className="text-gray-400 text-xs font-bold uppercase">Bet Amount</label>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.bet_amount')}</label>
                            <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">$</span>
                                 <input 
@@ -157,8 +164,8 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                                 />
                            </div>
                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">½</button>
-                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-[#1a202c] hover:bg-[#2d3748] text-xs font-bold py-2 rounded border border-gray-700">2×</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                                <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
                            </div>
                         </div>
 
@@ -167,7 +174,7 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                             disabled={isSpinning || balance < betAmount} 
                             className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all`}
                         >
-                            {isSpinning ? 'Spinning...' : 'Spin'}
+                            {isSpinning ? t('game.spinning') : t('game.spin')}
                         </button>
                     </>
                 ) : (
@@ -182,7 +189,7 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                 )}
             </div>
             
-            <div className="flex-1 bg-[#0b0e11] rounded-xl border border-gray-800 flex flex-col items-center justify-center p-8 overflow-hidden relative">
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-center p-8 overflow-hidden relative">
                  {/* Pointer */}
                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[158px] z-20">
                      <div className="w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[24px] border-t-white drop-shadow-xl filter"></div>
@@ -234,7 +241,7 @@ const WheelGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
                  {/* Overlay for Auto Bet Status */}
                  {isAutoBetting && (
                     <div className="absolute top-4 right-4 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                        AUTOBET ACTIVE
+                        {t('game.autobet_active')}
                     </div>
                 )}
             </div>
