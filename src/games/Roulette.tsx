@@ -1,0 +1,290 @@
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { THEME, type GameProps } from '../config';
+import { ProvablyFair } from '../utils/provably-fair';
+import { useAutoBet } from '../hooks/useAutoBet';
+import AutobetControls from '../components/AutobetControls';
+import { useSettings } from '../context/SettingsContext';
+
+const RouletteGame = ({ balance, setBalance, onGameEnd }: GameProps) => {
+    const { t, playSound } = useSettings();
+    const [betAmount, setBetAmount] = useState(10);
+    const [selectedBets, setSelectedBets] = useState<string[]>([]);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [lastNumber, setLastNumber] = useState<number | null>(null);
+
+    const [mode, setMode] = useState<'MANUAL' | 'AUTO'>('MANUAL');
+    const [autoTrigger, setAutoTrigger] = useState(0);
+
+    const { 
+        isAutoBetting, 
+        startAutoBet, 
+        stopAutoBet, 
+        processResult, 
+        settings, 
+        setSettings 
+    } = useAutoBet(balance, setBalance, betAmount, setBetAmount);
+
+    const [serverSeed] = useState(ProvablyFair.generateServerSeed());
+    const [clientSeed] = useState(ProvablyFair.generateClientSeed());
+    const [nonce, setNonce] = useState(0);
+
+    const RED_NUMBERS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+    
+    const getColor = (n: number) => {
+        if (n === 0) return 'green';
+        return RED_NUMBERS.includes(n) ? 'red' : 'black';
+    };
+
+    const toggleBet = (bet: string) => {
+        if (isSpinning || isAutoBetting) return;
+        playSound('click');
+        if (selectedBets.includes(bet)) {
+            setSelectedBets(prev => prev.filter(b => b !== bet));
+        } else {
+            setSelectedBets(prev => [...prev, bet]);
+        }
+    };
+
+    // Ref to access current selected bets during auto loop without dependency
+    const betsRef = useRef(selectedBets);
+    useEffect(() => { betsRef.current = selectedBets; }, [selectedBets]);
+
+    const spin = useCallback(() => {
+        const currentBets = betsRef.current;
+        const totalWager = betAmount * currentBets.length;
+        
+        if (balance < totalWager || currentBets.length === 0) {
+            stopAutoBet();
+            playSound('error');
+            return;
+        }
+        
+        playSound('click');
+        setBalance(b => b - totalWager);
+        setIsSpinning(true);
+        setLastNumber(null);
+
+        const resultFloat = ProvablyFair.generateResult(serverSeed, clientSeed, nonce);
+        setNonce(n => n + 1);
+        const result = Math.floor(resultFloat * 37); 
+
+        setTimeout(() => {
+            setLastNumber(result);
+            setIsSpinning(false);
+            
+            let totalWin = 0;
+            const winningColor = getColor(result);
+            
+            currentBets.forEach(bet => {
+                let multiplier = 0;
+                
+                if (bet === 'red' && winningColor === 'red') multiplier = 2;
+                else if (bet === 'black' && winningColor === 'black') multiplier = 2;
+                else if (bet === 'even' && result !== 0 && result % 2 === 0) multiplier = 2;
+                else if (bet === 'odd' && result !== 0 && result % 2 !== 0) multiplier = 2;
+                else if (bet === '1-18' && result >= 1 && result <= 18) multiplier = 2;
+                else if (bet === '19-36' && result >= 19 && result <= 36) multiplier = 2;
+                else if (bet === '1st 12' && result >= 1 && result <= 12) multiplier = 3;
+                else if (bet === '2nd 12' && result >= 13 && result <= 24) multiplier = 3;
+                else if (bet === '3rd 12' && result >= 25 && result <= 36) multiplier = 3;
+                else if (!isNaN(parseInt(bet)) && parseInt(bet) === result) multiplier = 36;
+                
+                totalWin += betAmount * multiplier;
+            });
+
+            if (totalWin > 0) {
+                setBalance(b => b + totalWin);
+                onGameEnd(true, totalWin, totalWager);
+                playSound('win');
+            } else {
+                onGameEnd(false, 0, totalWager);
+                playSound('lose');
+            }
+
+            if (isAutoBetting) {
+                const continueAuto = processResult(totalWin >= totalWager, totalWin);
+                if (continueAuto) {
+                    setTimeout(() => setAutoTrigger(t => t + 1), 500);
+                }
+            }
+
+        }, 1000); 
+    }, [balance, betAmount, serverSeed, clientSeed, nonce, isAutoBetting, processResult, stopAutoBet, setBalance, onGameEnd, playSound]);
+
+    useEffect(() => {
+        if (isAutoBetting && autoTrigger > 0) {
+            spin();
+        }
+    }, [autoTrigger, isAutoBetting, spin]);
+
+    return (
+        <div className="flex flex-col lg:flex-row gap-6 h-full">
+            <div className={`${THEME.card} p-5 rounded-xl w-full lg:w-80 flex flex-col gap-4 border ${THEME.border}`}>
+                {/* Mode Tabs */}
+                <div className="bg-vewire-input p-1 rounded-lg flex text-sm font-bold mb-2">
+                    <button 
+                        className={`flex-1 py-2 rounded ${mode === 'MANUAL' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('MANUAL'); }}
+                        disabled={isSpinning || isAutoBetting}
+                    >
+                        {t('game.manual')}
+                    </button>
+                    <button 
+                        className={`flex-1 py-2 rounded ${mode === 'AUTO' ? 'bg-vewire-card text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                        onClick={() => { playSound('click'); setMode('AUTO'); }}
+                        disabled={isSpinning || isAutoBetting}
+                    >
+                        {t('game.auto')}
+                    </button>
+                </div>
+
+                {mode === 'MANUAL' ? (
+                    <>
+                        <div>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.chip_value')}</label>
+                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                             <button onClick={() => setBetAmount(b => parseFloat((b / 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">½</button>
+                             <button onClick={() => setBetAmount(b => parseFloat((b * 2).toFixed(2)))} className="bg-vewire-input hover:bg-vewire-card text-xs font-bold py-2 rounded border border-vewire-border">2×</button>
+                        </div>
+                        
+                        <div className="text-xs text-gray-500 mt-2">{t('game.total_bet')}: ${(betAmount * selectedBets.length).toFixed(2)}</div>
+
+                        <div className="bg-vewire-input p-2 rounded text-[10px] text-gray-500 font-mono break-all">
+                            Next Nonce: {nonce}
+                        </div>
+
+                        <button 
+                            onClick={spin} 
+                            disabled={isSpinning || selectedBets.length === 0 || balance < (betAmount * selectedBets.length)} 
+                            className={`${THEME.accent} w-full py-4 rounded-lg font-bold text-black uppercase mt-auto disabled:opacity-50 hover:scale-105 transition-transform`}
+                        >
+                            {isSpinning ? t('game.spinning') : t('game.spin')}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div>
+                           <label className="text-gray-400 text-xs font-bold uppercase">{t('game.chip_value')}</label>
+                           <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} disabled={isAutoBetting} className={`w-full ${THEME.input} text-white p-3 rounded-lg border ${THEME.border} mt-2`} />
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">{t('game.total_bet')}: ${(betAmount * selectedBets.length).toFixed(2)}</div>
+                        
+                        <AutobetControls 
+                            settings={settings}
+                            onChange={setSettings}
+                            onStart={() => { startAutoBet(); setTimeout(() => setAutoTrigger(t => t + 1), 0); }}
+                            onStop={stopAutoBet}
+                            isRunning={isAutoBetting}
+                            balance={balance}
+                        />
+                    </>
+                )}
+            </div>
+            
+            <div className="flex-1 bg-vewire-bg rounded-xl border border-vewire-border flex flex-col items-center justify-center p-6 overflow-auto relative">
+                
+                {/* Wheel / Result */}
+                <div className="mb-8 relative w-24 h-24 flex items-center justify-center">
+                    <div className={`absolute inset-0 rounded-full border-4 ${isSpinning ? 'animate-spin border-dashed border-gray-500' : 'border-transparent'}`}></div>
+                    {lastNumber !== null && !isSpinning ? (
+                        <div className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-bold border-4 shadow-[0_0_20px_currentColor] animate-in zoom-in
+                            ${getColor(lastNumber) === 'red' ? 'bg-red-600 border-red-400 text-white' : 
+                              getColor(lastNumber) === 'black' ? 'bg-gray-900 border-gray-600 text-white' : 
+                              'bg-green-600 border-green-400 text-white'
+                            }
+                        `}>
+                            {lastNumber}
+                        </div>
+                    ) : (
+                        <div className="text-gray-700 text-6xl font-black opacity-20">
+                            {isSpinning ? '...' : '0'}
+                        </div>
+                    )}
+                </div>
+
+                {/* Betting Board */}
+                <div className="flex flex-col gap-1 w-full max-w-[700px] mx-auto overflow-x-auto">
+                    
+                    <div className="flex gap-1">
+                        {/* 0 (Spans rows) */}
+                        <button 
+                            onClick={() => toggleBet('0')}
+                            className={`w-12 rounded-l font-bold border flex items-center justify-center transition-all
+                                ${selectedBets.includes('0') ? 'ring-2 ring-yellow-400 z-10' : 'opacity-90 hover:opacity-100'}
+                                bg-green-600 border-green-700 text-white
+                            `}
+                        >
+                            0
+                        </button>
+
+                        {/* Numbers Grid */}
+                        <div className="flex-1 grid grid-cols-12 gap-1">
+                            {Array.from({length: 36}, (_, i) => i + 1).map(n => {
+                                const color = getColor(n);
+                                return (
+                                    <button
+                                        key={n}
+                                        onClick={() => toggleBet(n.toString())}
+                                        className={`
+                                            aspect-square flex items-center justify-center font-bold text-sm md:text-lg rounded transition-all border
+                                            ${selectedBets.includes(n.toString()) ? 'ring-2 ring-yellow-400 z-10' : 'opacity-90 hover:opacity-100'}
+                                            ${color === 'red' ? 'bg-red-600 border-red-800 text-white' : 'bg-gray-800 border-gray-900 text-white'}
+                                        `}
+                                    >
+                                        {n}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Dozens */}
+                    <div className="flex gap-1 ml-13 pl-12">
+                        {['1st 12', '2nd 12', '3rd 12'].map(bet => (
+                            <button
+                                key={bet}
+                                onClick={() => toggleBet(bet)}
+                                className={`flex-1 py-3 bg-vewire-card border border-vewire-border rounded hover:bg-vewire-input font-bold text-xs uppercase
+                                    ${selectedBets.includes(bet) ? 'ring-2 ring-yellow-400 z-10 bg-vewire-input' : ''}
+                                `}
+                            >
+                                {bet}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* 1:1 Bets */}
+                    <div className="flex gap-1 ml-13 pl-12">
+                         {['1-18', 'even', 'red', 'black', 'odd', '19-36'].map(bet => (
+                             <button
+                                key={bet}
+                                onClick={() => toggleBet(bet)}
+                                className={`flex-1 py-3 border border-vewire-border rounded font-bold text-xs uppercase hover:opacity-80
+                                    ${bet === 'red' ? 'bg-red-600 border-red-800' : 
+                                      bet === 'black' ? 'bg-gray-800 border-gray-900' : 
+                                      'bg-vewire-card'}
+                                    ${selectedBets.includes(bet) ? 'ring-2 ring-yellow-400 z-10' : ''}
+                                `}
+                             >
+                                 {bet}
+                             </button>
+                         ))}
+                    </div>
+
+                </div>
+
+                {/* Overlay for Auto Bet Status */}
+                 {isAutoBetting && (
+                    <div className="absolute top-4 right-4 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                        {t('game.autobet_active')}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default RouletteGame;
