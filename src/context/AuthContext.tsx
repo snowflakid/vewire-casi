@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { supabase } from '../lib/supabase';
 
 // User Interface
 export interface UserStats {
@@ -9,8 +10,9 @@ export interface UserStats {
 }
 
 export interface User {
+    id?: string;
     username: string;
-    passwordHash: string; // Simple mock hash
+    passwordHash?: string; 
     balance: number;
     weeklyBalance: number;
     inWeeklyChallenge: boolean;
@@ -25,143 +27,177 @@ interface AuthContextType {
     logout: () => void;
     updateUser: (updates: Partial<User> | ((prev: User) => Partial<User>)) => void;
     users: User[]; // Exposed for Leaderboard
+    loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY_USERS = 'vewire_users';
-const STORAGE_KEY_CURRENT = 'vewire_current_user';
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [users, setUsers] = useState<User[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    // Load initial state
+    // Initial Load
     useEffect(() => {
-        const storedUsers = localStorage.getItem(STORAGE_KEY_USERS);
-        if (storedUsers) {
-            setUsers(JSON.parse(storedUsers));
-        }
-
-        const storedCurrent = localStorage.getItem(STORAGE_KEY_CURRENT);
-        if (storedCurrent) {
-            setUser(JSON.parse(storedCurrent));
-        }
+        const init = async () => {
+            // Check local storage for persistent login session
+            const savedUsername = localStorage.getItem('vewire_username');
+            if (savedUsername) {
+                await fetchUser(savedUsername);
+            }
+            // Fetch leaderboard
+            await fetchUsers();
+            setLoading(false);
+        };
+        init();
     }, []);
 
-    const saveUsers = (newUsers: User[]) => {
-        setUsers(newUsers);
-        localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(newUsers));
+    // Polling for leaderboard updates (simple real-time)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchUsers();
+        }, 10000); // Every 10 seconds
+        return () => clearInterval(interval);
+    }, []);
+
+    const fetchUsers = async () => {
+        if (!import.meta.env.VITE_SUPABASE_URL) return; // Skip if not configured
+
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .order('weekly_balance', { ascending: false });
+
+        if (!error && data) {
+            const mappedUsers: User[] = data.map(u => ({
+                id: u.id,
+                username: u.username,
+                balance: parseFloat(u.balance),
+                weeklyBalance: parseFloat(u.weekly_balance),
+                inWeeklyChallenge: u.in_weekly_challenge,
+                theme: u.theme || 'default',
+                stats: {
+                    totalBets: parseInt(u.total_bets),
+                    totalWagered: parseFloat(u.total_wagered),
+                    totalWins: parseInt(u.total_wins),
+                    joinDate: new Date(u.created_at).toLocaleDateString()
+                }
+            }));
+            setUsers(mappedUsers);
+        }
+    };
+
+    const fetchUser = async (username: string) => {
+        if (!import.meta.env.VITE_SUPABASE_URL) return null;
+
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .single();
+
+        if (!error && data) {
+            const u: User = {
+                id: data.id,
+                username: data.username,
+                passwordHash: data.password_hash,
+                balance: parseFloat(data.balance),
+                weeklyBalance: parseFloat(data.weekly_balance),
+                inWeeklyChallenge: data.in_weekly_challenge,
+                theme: data.theme || 'default',
+                stats: {
+                    totalBets: parseInt(data.total_bets),
+                    totalWagered: parseFloat(data.total_wagered),
+                    totalWins: parseInt(data.total_wins),
+                    joinDate: new Date(data.created_at).toLocaleDateString()
+                }
+            };
+            setUser(u);
+            return u;
+        }
+        return null;
     };
 
     const login = async (username: string, password: string) => {
-        // Mock delay
-        await new Promise(r => setTimeout(r, 500));
+        const foundUser = await fetchUser(username);
         
-        const foundUser = users.find(u => u.username === username && u.passwordHash === btoa(password));
-        if (foundUser) {
+        if (foundUser && foundUser.passwordHash === btoa(password)) {
             setUser(foundUser);
-            localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify(foundUser));
+            localStorage.setItem('vewire_username', username);
             return true;
         }
         return false;
     };
 
     const register = async (username: string, password: string) => {
-        await new Promise(r => setTimeout(r, 500));
+        if (!import.meta.env.VITE_SUPABASE_URL) return false;
 
-        if (users.find(u => u.username === username)) {
-            return false; // User exists
+        const { error } = await supabase
+            .from('users')
+            .insert([
+                {
+                    username,
+                    password_hash: btoa(password),
+                    balance: 1000,
+                    weekly_balance: 100,
+                    in_weekly_challenge: false,
+                    total_bets: 0,
+                    total_wagered: 0,
+                    total_wins: 0
+                }
+            ]);
+
+        if (!error) {
+            await login(username, password);
+            await fetchUsers(); // Update leaderboard
+            return true;
         }
-
-        const newUser: User = {
-            username,
-            passwordHash: btoa(password),
-            balance: 1000, // Starting balance
-            weeklyBalance: 100, // Weekly challenge start
-            inWeeklyChallenge: false,
-            stats: {
-                totalBets: 0,
-                totalWagered: 0,
-                totalWins: 0,
-                joinDate: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-            },
-            theme: 'default'
-        };
-
-        const newUsers = [...users, newUser];
-        saveUsers(newUsers);
-        
-        setUser(newUser);
-        localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify(newUser));
-        return true;
+        return false;
     };
 
     const logout = () => {
         setUser(null);
-        localStorage.removeItem(STORAGE_KEY_CURRENT);
+        localStorage.removeItem('vewire_username');
     };
 
-    // Refactored to support functional updates and atomic persistence
     const updateUser = (updatesInput: Partial<User> | ((prev: User) => Partial<User>)) => {
         setUser(prevUser => {
             if (!prevUser) return null;
 
             const updates = typeof updatesInput === 'function' ? updatesInput(prevUser) : updatesInput;
-
             const updatedUser = { ...prevUser, ...updates };
 
-            // Deep merge logic for stats
+            // Apply stats merge locally
             if (updates.stats) {
                 updatedUser.stats = { ...prevUser.stats, ...updates.stats };
             }
 
-            // Side Effects: Persist to storage
-            // Note: We need to use the 'updatedUser' we just calculated.
-            // Since this is inside a state setter, we can't easily access 'users' state correctly if it's stale?
-            // Actually, we can just update localStorage here.
-            
-            localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify(updatedUser));
-            
-            // We also need to update the big 'users' list.
-            // We can do this by reading the current 'users' from storage to be safe, 
-            // OR use the 'setUsers' functional update too.
-            
-            // To avoid complex chaining, let's just trigger the users update in a useEffect? 
-            // No, that might be too slow for Leaderboard.
-            // Let's do it right here, assuming 'users' state is relatively fresh or we use functional update for it too.
-            
-            // We can't call setUsers inside setUser callback cleanly without side effects.
-            // But this is an event handler essentially.
-            // Wait, this is inside setUser callback? NO, DO NOT DO SIDE EFFECTS INSIDE SETUSER.
-            
-            // RETRY: Calculate new state OUTSIDE setUser if possible? 
-            // No, we need the 'prevUser'.
-            
-            // OK, let's keep the side effect OUTSIDE.
-            // But we need the 'prev' state.
-            
-            return updatedUser; 
+            // Sync to Cloud
+            if (import.meta.env.VITE_SUPABASE_URL) {
+                // Map frontend fields back to DB columns
+                const dbUpdates: any = {};
+                if (updates.balance !== undefined) dbUpdates.balance = updates.balance;
+                if (updates.weeklyBalance !== undefined) dbUpdates.weekly_balance = updates.weeklyBalance;
+                if (updates.inWeeklyChallenge !== undefined) dbUpdates.in_weekly_challenge = updates.inWeeklyChallenge;
+                if (updates.theme !== undefined) dbUpdates.theme = updates.theme;
+                
+                if (updates.stats) {
+                    if (updates.stats.totalBets !== undefined) dbUpdates.total_bets = updates.stats.totalBets;
+                    if (updates.stats.totalWagered !== undefined) dbUpdates.total_wagered = updates.stats.totalWagered;
+                    if (updates.stats.totalWins !== undefined) dbUpdates.total_wins = updates.stats.totalWins;
+                }
+
+                supabase.from('users').update(dbUpdates).eq('username', prevUser.username).then(() => {
+                    // Silent sync
+                });
+            }
+
+            return updatedUser;
         });
     };
 
-    // We need to sync changes to 'users' list whenever 'user' changes.
-    // This is safer than trying to update both atomically in the handler.
-    useEffect(() => {
-        if (user) {
-            setUsers(prevUsers => {
-                const newUsers = prevUsers.map(u => u.username === user.username ? user : u);
-                // Only write to local storage if actually changed? 
-                // JSON.stringify comparison is expensive. 
-                // Let's just write it. It's debounced enough by React batched updates.
-                localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(newUsers));
-                return newUsers;
-            });
-        }
-    }, [user]);
-
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, updateUser, users }}>
+        <AuthContext.Provider value={{ user, login, register, logout, updateUser, users, loading }}>
             {children}
         </AuthContext.Provider>
     );
