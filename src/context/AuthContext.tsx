@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import SHA256 from 'crypto-js/sha256';
+import Hex from 'crypto-js/enc-hex';
 
 // User Interface
 export interface UserStats {
@@ -13,11 +15,13 @@ export interface User {
     id?: string;
     username: string;
     passwordHash?: string; 
+    salt?: string;
     balance: number;
     weeklyBalance: number;
     inWeeklyChallenge: boolean;
     stats: UserStats;
     theme: string;
+    lastDailySpin?: string;
 }
 
 interface AuthContextType {
@@ -76,6 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 weeklyBalance: parseFloat(u.weekly_balance),
                 inWeeklyChallenge: u.in_weekly_challenge,
                 theme: u.theme || 'default',
+                lastDailySpin: u.last_daily_spin,
                 stats: {
                     totalBets: parseInt(u.total_bets),
                     totalWagered: parseFloat(u.total_wagered),
@@ -101,10 +106,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 id: data.id,
                 username: data.username,
                 passwordHash: data.password_hash,
+                salt: data.salt,
                 balance: parseFloat(data.balance),
                 weeklyBalance: parseFloat(data.weekly_balance),
                 inWeeklyChallenge: data.in_weekly_challenge,
                 theme: data.theme || 'default',
+                lastDailySpin: data.last_daily_spin,
                 stats: {
                     totalBets: parseInt(data.total_bets),
                     totalWagered: parseFloat(data.total_wagered),
@@ -121,10 +128,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const login = async (username: string, password: string) => {
         const foundUser = await fetchUser(username);
         
-        if (foundUser && foundUser.passwordHash === btoa(password)) {
-            setUser(foundUser);
-            localStorage.setItem('vewire_username', username);
-            return true;
+        if (foundUser) {
+            // Check for legacy user (no salt) or new user (salt)
+            if (foundUser.salt) {
+                const inputHash = SHA256(password + foundUser.salt).toString(Hex);
+                if (foundUser.passwordHash === inputHash) {
+                    setUser(foundUser);
+                    localStorage.setItem('vewire_username', username);
+                    return true;
+                }
+            } else {
+                // Legacy Fallback (Base64)
+                if (foundUser.passwordHash === btoa(password)) {
+                     setUser(foundUser);
+                     localStorage.setItem('vewire_username', username);
+                     return true;
+                }
+            }
         }
         return false;
     };
@@ -132,12 +152,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const register = async (username: string, password: string) => {
         if (!import.meta.env.VITE_SUPABASE_URL) return false;
 
+        const salt = crypto.randomUUID(); // Use UUID as a simple random salt
+        const passwordHash = SHA256(password + salt).toString(Hex);
+
         const { error } = await supabase
             .from('users')
             .insert([
                 {
                     username,
-                    password_hash: btoa(password),
+                    password_hash: passwordHash,
+                    salt: salt,
                     balance: 1000,
                     weekly_balance: 100,
                     in_weekly_challenge: false,
@@ -180,6 +204,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 if (updates.weeklyBalance !== undefined) dbUpdates.weekly_balance = updates.weeklyBalance;
                 if (updates.inWeeklyChallenge !== undefined) dbUpdates.in_weekly_challenge = updates.inWeeklyChallenge;
                 if (updates.theme !== undefined) dbUpdates.theme = updates.theme;
+                if (updates.lastDailySpin !== undefined) dbUpdates.last_daily_spin = updates.lastDailySpin;
                 
                 if (updates.stats) {
                     if (updates.stats.totalBets !== undefined) dbUpdates.total_bets = updates.stats.totalBets;

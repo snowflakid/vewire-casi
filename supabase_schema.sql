@@ -12,7 +12,9 @@ create table public.users (
   total_bets bigint default 0,
   total_wagered numeric default 0,
   total_wins bigint default 0,
-  theme text default 'default'
+  theme text default 'default',
+  last_daily_spin timestamp with time zone,
+  salt text
 );
 
 -- 2. Enable Row Level Security (RLS) is recommended, but for this prototype we will allow public access 
