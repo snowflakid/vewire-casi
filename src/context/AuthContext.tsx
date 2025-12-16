@@ -185,10 +185,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const updateUser = (updatesInput: Partial<User> | ((prev: User) => Partial<User>)) => {
+        if (!user) return;
+
+        const updates = typeof updatesInput === 'function' ? updatesInput(user) : updatesInput;
+
         setUser(prevUser => {
             if (!prevUser) return null;
 
-            const updates = typeof updatesInput === 'function' ? updatesInput(prevUser) : updatesInput;
             const updatedUser = { ...prevUser, ...updates };
 
             // Apply stats merge locally
@@ -196,29 +199,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 updatedUser.stats = { ...prevUser.stats, ...updates.stats };
             }
 
-            // Sync to Cloud
-            if (import.meta.env.VITE_SUPABASE_URL) {
-                // Map frontend fields back to DB columns
-                const dbUpdates: any = {};
-                if (updates.balance !== undefined) dbUpdates.balance = updates.balance;
-                if (updates.weeklyBalance !== undefined) dbUpdates.weekly_balance = updates.weeklyBalance;
-                if (updates.inWeeklyChallenge !== undefined) dbUpdates.in_weekly_challenge = updates.inWeeklyChallenge;
-                if (updates.theme !== undefined) dbUpdates.theme = updates.theme;
-                if (updates.lastDailySpin !== undefined) dbUpdates.last_daily_spin = updates.lastDailySpin;
-                
-                if (updates.stats) {
-                    if (updates.stats.totalBets !== undefined) dbUpdates.total_bets = updates.stats.totalBets;
-                    if (updates.stats.totalWagered !== undefined) dbUpdates.total_wagered = updates.stats.totalWagered;
-                    if (updates.stats.totalWins !== undefined) dbUpdates.total_wins = updates.stats.totalWins;
-                }
-
-                supabase.from('users').update(dbUpdates).eq('username', prevUser.username).then(() => {
-                    // Silent sync
-                });
-            }
-
             return updatedUser;
         });
+
+        // Sync to Cloud
+        if (import.meta.env.VITE_SUPABASE_URL) {
+            // Map frontend fields back to DB columns
+            const dbUpdates: any = {};
+            if (updates.balance !== undefined) dbUpdates.balance = updates.balance;
+            if (updates.weeklyBalance !== undefined) dbUpdates.weekly_balance = updates.weeklyBalance;
+            if (updates.inWeeklyChallenge !== undefined) dbUpdates.in_weekly_challenge = updates.inWeeklyChallenge;
+            if (updates.theme !== undefined) dbUpdates.theme = updates.theme;
+            if (updates.lastDailySpin !== undefined) dbUpdates.last_daily_spin = updates.lastDailySpin;
+            
+            if (updates.stats) {
+                if (updates.stats.totalBets !== undefined) dbUpdates.total_bets = updates.stats.totalBets;
+                if (updates.stats.totalWagered !== undefined) dbUpdates.total_wagered = updates.stats.totalWagered;
+                if (updates.stats.totalWins !== undefined) dbUpdates.total_wins = updates.stats.totalWins;
+            }
+
+            supabase.from('users').update(dbUpdates).eq('username', user.username).then(({ error }) => {
+                if (error) console.error('Error syncing user:', error);
+            });
+        }
     };
 
     return (

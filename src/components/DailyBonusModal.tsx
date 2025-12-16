@@ -133,9 +133,9 @@ export default function DailyBonusModal({ isOpen, onClose }: DailyBonusModalProp
         else selectedIndex = 5; // $5000
 
         // IMMEDIATE UPDATE: Commit result to DB to prevent refresh abuse
-        // Also add to Weekly Balance (Tournament) instead of Main Balance
         const prize = SEGMENTS[selectedIndex];
         updateUser((prev) => ({
+            balance: prev.balance + prize.value,
             weeklyBalance: prev.weeklyBalance + prize.value,
             lastDailySpin: new Date().toISOString()
         }));
