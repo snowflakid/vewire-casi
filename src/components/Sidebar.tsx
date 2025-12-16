@@ -1,5 +1,5 @@
 import { THEME, GAMES_CONFIG } from '../config';
-import { User, ShieldCheck, Trophy, Settings, Gift } from 'lucide-react';
+import { User, ShieldCheck, Trophy, Settings } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 
 interface SidebarProps {
@@ -9,10 +9,9 @@ interface SidebarProps {
   onOpenProfile: () => void;
   onOpenLeaderboard: () => void;
   onOpenSettings: () => void;
-  onOpenDailyBonus: () => void;
 }
 
-const Sidebar = ({ isOpen = false, activeGame, setGame, onOpenProfile, onOpenLeaderboard, onOpenSettings, onOpenDailyBonus }: SidebarProps) => {
+const Sidebar = ({ isOpen = false, activeGame, setGame, onOpenProfile, onOpenLeaderboard, onOpenSettings }: SidebarProps) => {
   const { t, playSound } = useSettings();
 
   const handleGameSelect = (id: string) => {
@@ -48,10 +47,6 @@ const Sidebar = ({ isOpen = false, activeGame, setGame, onOpenProfile, onOpenLea
       </div>
       
       <div className="mt-auto p-4 border-t border-vewire-border">
-        <button onClick={() => handleMenuClick(onOpenDailyBonus)} className="flex items-center gap-4 p-3 text-gray-400 hover:text-white w-full group">
-            <Gift size={20} className="text-pink-500 group-hover:animate-bounce" />
-            <span className="hidden md:block font-medium">Daily Spin</span>
-        </button>
         <button onClick={() => handleMenuClick(onOpenLeaderboard)} className="flex items-center gap-4 p-3 text-gray-400 hover:text-white w-full">
             <Trophy size={20} className="text-yellow-500" />
             <span className="hidden md:block font-medium">{t('nav.contest')}</span>

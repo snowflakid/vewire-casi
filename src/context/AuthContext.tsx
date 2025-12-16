@@ -21,7 +21,6 @@ export interface User {
     inWeeklyChallenge: boolean;
     stats: UserStats;
     theme: string;
-    lastDailySpin?: string;
 }
 
 interface AuthContextType {
@@ -80,7 +79,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 weeklyBalance: parseFloat(u.weekly_balance),
                 inWeeklyChallenge: u.in_weekly_challenge,
                 theme: u.theme || 'default',
-                lastDailySpin: u.last_daily_spin,
                 stats: {
                     totalBets: parseInt(u.total_bets),
                     totalWagered: parseFloat(u.total_wagered),
@@ -111,7 +109,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 weeklyBalance: parseFloat(data.weekly_balance),
                 inWeeklyChallenge: data.in_weekly_challenge,
                 theme: data.theme || 'default',
-                lastDailySpin: data.last_daily_spin,
                 stats: {
                     totalBets: parseInt(data.total_bets),
                     totalWagered: parseFloat(data.total_wagered),
@@ -210,7 +207,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (updates.weeklyBalance !== undefined) dbUpdates.weekly_balance = updates.weeklyBalance;
             if (updates.inWeeklyChallenge !== undefined) dbUpdates.in_weekly_challenge = updates.inWeeklyChallenge;
             if (updates.theme !== undefined) dbUpdates.theme = updates.theme;
-            if (updates.lastDailySpin !== undefined) dbUpdates.last_daily_spin = updates.lastDailySpin;
             
             if (updates.stats) {
                 if (updates.stats.totalBets !== undefined) dbUpdates.total_bets = updates.stats.totalBets;

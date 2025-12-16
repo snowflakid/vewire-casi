@@ -14,7 +14,6 @@ import LeaderboardModal from './components/LeaderboardModal';
 
 import { SettingsProvider } from './context/SettingsContext';
 import SettingsModal from './components/SettingsModal';
-import DailyBonusModal from './components/DailyBonusModal';
 
 // Games
 import MinesGame from './games/Mines';
@@ -60,7 +59,6 @@ function AppContent() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [dailyBonusOpen, setDailyBonusOpen] = useState(false);
   const [pfModalOpen, setPfModalOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   
@@ -134,7 +132,6 @@ function AppContent() {
         onOpenProfile={() => setProfileOpen(true)}
         onOpenLeaderboard={() => setLeaderboardOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenDailyBonus={() => setDailyBonusOpen(true)}
       />
       
       {sidebarOpen && (
@@ -245,7 +242,6 @@ function AppContent() {
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
       <LeaderboardModal isOpen={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <DailyBonusModal isOpen={dailyBonusOpen} onClose={() => setDailyBonusOpen(false)} />
     </div>
   );
 }
