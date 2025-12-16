@@ -115,7 +115,7 @@ export default function DailyBonusModal({ isOpen, onClose }: DailyBonusModalProp
     };
 
     const spin = () => {
-        if (!canSpin || isSpinning) return;
+        if (!canSpin || isSpinning || !user) return;
         
         setIsSpinning(true);
         setResult(null);
@@ -131,6 +131,14 @@ export default function DailyBonusModal({ isOpen, onClose }: DailyBonusModalProp
         else if (rand < 0.95) selectedIndex = 3; // $500
         else if (rand < 0.99) selectedIndex = 4; // $1000
         else selectedIndex = 5; // $5000
+
+        // IMMEDIATE UPDATE: Commit result to DB to prevent refresh abuse
+        // Also add to Weekly Balance (Tournament) instead of Main Balance
+        const prize = SEGMENTS[selectedIndex];
+        updateUser((prev) => ({
+            weeklyBalance: prev.weeklyBalance + prize.value,
+            lastDailySpin: new Date().toISOString()
+        }));
 
         // Calculate target rotation
         // We want the selected segment to point UP (or where our pointer is).
@@ -180,11 +188,7 @@ export default function DailyBonusModal({ isOpen, onClose }: DailyBonusModalProp
         const prize = SEGMENTS[index];
         setResult(prize.value);
         playSound('win');
-        
-        updateUser((prev) => ({
-            balance: prev.balance + prize.value,
-            lastDailySpin: new Date().toISOString()
-        }));
+        // DB update is now done at start of spin to prevent abuse
     };
 
     if (!isOpen) return null;
